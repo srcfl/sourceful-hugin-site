@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hugin — open driver library for energy integrations</title>
+<meta name="description" content="The AI-first workbench for writing Lua drivers for forty-two-watts. Point AI at an unknown inverter, get a working driver in minutes.">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/frahlg/magrathea@main/tokens.css">
+<script type="module" src="https://cdn.jsdelivr.net/gh/frahlg/magrathea@main/components/index.js"></script>
+
+<style>
+  body { min-height: 100dvh; display: flex; flex-direction: column; }
+  nav {
+    max-width: var(--mag-max-content);
+    margin: 0 auto; width: 100%;
+    padding: var(--mag-space-5);
+    display: flex; align-items: center; justify-content: space-between; gap: var(--mag-space-4);
+  }
+  .logo {
+    font-weight: 700; letter-spacing: -0.02em; font-size: var(--mag-text-lg);
+    color: var(--mag-ink); text-decoration: none;
+    display: flex; align-items: center; gap: var(--mag-space-2);
+  }
+  .logo::before {
+    content: ""; width: 14px; height: 14px; border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, var(--mag-accent) 0%, var(--mag-accent-hover) 80%);
+    box-shadow: 0 0 12px color-mix(in oklch, var(--mag-accent) 40%, transparent);
+  }
+  .nav-links { display: flex; align-items: center; gap: var(--mag-space-5); }
+  .nav-links a {
+    color: var(--mag-ink-muted); text-decoration: none;
+    font-size: var(--mag-text-sm); font-weight: 500;
+    transition: color var(--mag-dur) var(--mag-ease);
+  }
+  .nav-links a:hover { color: var(--mag-ink); }
+  @media (max-width: 40rem) { .nav-links a:not(.cta) { display: none; } }
+
+  footer {
+    padding: var(--mag-space-6) var(--mag-space-5);
+    max-width: var(--mag-max-content); margin: 0 auto; width: 100%;
+    color: var(--mag-ink-subtle); font-size: var(--mag-text-sm);
+    border-top: 1px solid var(--mag-border-subtle);
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: var(--mag-space-4);
+    margin-top: auto;
+  }
+  footer a { color: var(--mag-ink-muted); text-decoration: none; }
+  footer a:hover { color: var(--mag-ink); }
+
+  .dl-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+    gap: var(--mag-space-4);
+  }
+  .dl-card {
+    padding: var(--mag-space-5);
+    border: 1px solid var(--mag-border-subtle);
+    border-radius: var(--mag-radius-lg);
+    background: var(--mag-surface);
+    display: flex; flex-direction: column; gap: var(--mag-space-3);
+  }
+  .dl-card h3 { margin: 0; font-size: var(--mag-text-base); font-weight: 600; }
+  .dl-card a {
+    font-family: var(--mag-font-mono); font-size: var(--mag-text-xs);
+    color: var(--mag-ink-muted); text-decoration: none;
+    word-break: break-all;
+  }
+  .dl-card a:hover { color: var(--mag-accent); }
+  #catalog-count { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="logo">Hugin</a>
+  <div class="nav-links">
+    <a href="#download">Download</a>
+    <a id="catalog-link" href="https://3egjh3edxc.eu-central-1.awsapprunner.com/v1/catalog">Catalog API</a>
+    <a href="https://github.com/frahlg/forty-two-watts">forty-two-watts</a>
+    <a href="#download" class="cta">
+      <mag-button size="sm">Install</mag-button>
+    </a>
+  </div>
+</nav>
+
+<mag-hero bleed>
+  <mag-badge tone="accent" dot>v0.2.0 · alpha</mag-badge>
+  <mag-heading display>
+    World's largest open driver library for energy integrations.
+  </mag-heading>
+  <mag-text lead>
+    Point AI at an unknown inverter. Get a working Lua driver in minutes.
+    Drivers land in <a href="https://github.com/frahlg/forty-two-watts">forty-two-watts</a>
+    — the open-source EMS anyone can self-host.
+  </mag-text>
+  <div style="display:flex; gap: var(--mag-space-3); flex-wrap: wrap;">
+    <a href="#download" style="text-decoration:none;"><mag-button size="lg">Download Hugin Desktop</mag-button></a>
+    <a id="browse-catalog" href="https://3egjh3edxc.eu-central-1.awsapprunner.com/v1/catalog" style="text-decoration:none;"><mag-button size="lg" variant="secondary">Browse <span id="catalog-count">20</span> drivers</mag-button></a>
+  </div>
+</mag-hero>
+
+<mag-section>
+  <mag-heading level="2">Why Hugin</mag-heading>
+  <mag-grid cols="3">
+    <mag-card>
+      <mag-eyebrow>01</mag-eyebrow>
+      <mag-heading level="3">AI-first authoring</mag-heading>
+      <mag-text>
+        Claude writes the driver, you review. Every accepted driver becomes
+        reference material for the next one. The library compounds.
+      </mag-text>
+    </mag-card>
+    <mag-card>
+      <mag-eyebrow>02</mag-eyebrow>
+      <mag-heading level="3">Local-first</mag-heading>
+      <mag-text>
+        Full LAN access on your machine. Probe Modbus TCP, MQTT, HTTP on
+        your own network. No agent to install. No cloud-dependency for
+        the work that matters.
+      </mag-text>
+    </mag-card>
+    <mag-card>
+      <mag-eyebrow>03</mag-eyebrow>
+      <mag-heading level="3">Open by default</mag-heading>
+      <mag-text>
+        Every driver ships as a PR against
+        <a href="https://github.com/frahlg/forty-two-watts">frahlg/forty-two-watts</a>.
+        Your name on the commit. No lock-in.
+      </mag-text>
+    </mag-card>
+  </mag-grid>
+</mag-section>
+
+<mag-section id="download">
+  <mag-heading level="2">Download</mag-heading>
+  <mag-text lead>Single binary. Unpack, run, browser opens. ~5 MB.</mag-text>
+  <div class="dl-grid">
+    <div class="dl-card">
+      <h3>macOS — Apple Silicon</h3>
+      <a href="https://sourceful-hugin-releases.s3.eu-central-1.amazonaws.com/latest/hugin_0.2.0_darwin_arm64.tar.gz">hugin_0.2.0_darwin_arm64.tar.gz</a>
+    </div>
+    <div class="dl-card">
+      <h3>macOS — Intel</h3>
+      <a href="https://sourceful-hugin-releases.s3.eu-central-1.amazonaws.com/latest/hugin_0.2.0_darwin_amd64.tar.gz">hugin_0.2.0_darwin_amd64.tar.gz</a>
+    </div>
+    <div class="dl-card">
+      <h3>Linux x86_64</h3>
+      <a href="https://sourceful-hugin-releases.s3.eu-central-1.amazonaws.com/latest/hugin_0.2.0_linux_amd64.tar.gz">hugin_0.2.0_linux_amd64.tar.gz</a>
+    </div>
+    <div class="dl-card">
+      <h3>Linux ARM64</h3>
+      <a href="https://sourceful-hugin-releases.s3.eu-central-1.amazonaws.com/latest/hugin_0.2.0_linux_arm64.tar.gz">hugin_0.2.0_linux_arm64.tar.gz</a>
+    </div>
+    <div class="dl-card">
+      <h3>Windows x86_64</h3>
+      <a href="https://sourceful-hugin-releases.s3.eu-central-1.amazonaws.com/latest/hugin_0.2.0_windows_amd64.zip">hugin_0.2.0_windows_amd64.zip</a>
+    </div>
+    <div class="dl-card">
+      <h3>Windows ARM64</h3>
+      <a href="https://sourceful-hugin-releases.s3.eu-central-1.amazonaws.com/latest/hugin_0.2.0_windows_arm64.zip">hugin_0.2.0_windows_arm64.zip</a>
+    </div>
+  </div>
+</mag-section>
+
+<footer>
+  <div>
+    <strong>Hugin</strong> · made by <a href="https://sourceful.energy">Sourceful</a> ·
+    drivers land in <a href="https://github.com/frahlg/forty-two-watts">forty-two-watts</a>
+  </div>
+  <div>
+    <a href="https://3egjh3edxc.eu-central-1.awsapprunner.com/v1/health">api status</a>
+  </div>
+</footer>
+
+<script>
+  // Live-fetch catalog size from the API.
+  const API_BASE = 'https://3egjh3edxc.eu-central-1.awsapprunner.com';
+  fetch(API_BASE + '/v1/catalog').then(r => r.json()).then(d => {
+    const el = document.getElementById('catalog-count');
+    if (el && Array.isArray(d)) el.textContent = d.length;
+  }).catch(()=>{});
+</script>
+
+</body>
+</html>
