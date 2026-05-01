@@ -346,11 +346,19 @@ The user can submit your latest driver as a PR with one click. So make every \`\
         this.error = null;
         this.prURL = null;
         this.input = '';
+
+        // Build the message-history payload BEFORE pushing the empty
+        // assistant placeholder so we don't include it in the request.
+        const history = this.messages.map(m => ({ role: m.role, content: m.content }));
+        history.push({ role: 'user', content: text });
+
         this.messages.push({ role: 'user', content: text });
-        const assistant = { role: 'assistant', content: '', streaming: true };
-        this.messages.push(assistant);
+        this.messages.push({ role: 'assistant', content: '', streaming: true });
+        const assistantIdx = this.messages.length - 1;
         this.streaming = true;
         this.scrollDown();
+
+        console.log('[hugin] sending', history.length, 'messages');
 
         try {
           const resp = await fetch(API_BASE + '/v1/ai/messages', {
@@ -358,17 +366,17 @@ The user can submit your latest driver as a PR with one click. So make every \`\
             headers: {
               'Authorization': 'Bearer ' + this.token,
               'Content-Type': 'application/json',
+              'Accept': 'text/event-stream',
             },
             body: JSON.stringify({
               model: 'claude-opus-4-7',
               max_tokens: 4096,
               stream: true,
               system: SYSTEM_PROMPT,
-              messages: this.messages
-                .filter(m => m.role !== 'assistant' || m.content)
-                .map(m => ({ role: m.role, content: m.content })),
+              messages: history,
             }),
           });
+          console.log('[hugin] response', resp.status, resp.headers.get('content-type'));
           if (resp.status === 401) { this.signOut(); throw new Error('Session expired. Please sign in again.'); }
           if (!resp.ok) {
             const t = await resp.text();
@@ -378,6 +386,7 @@ The user can submit your latest driver as a PR with one click. So make every \`\
           const reader = resp.body.getReader();
           const decoder = new TextDecoder();
           let buf = '';
+          let deltaCount = 0;
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
@@ -391,18 +400,30 @@ The user can submit your latest driver as a PR with one click. So make every \`\
               try {
                 const ev = JSON.parse(payload);
                 if (ev.type === 'content_block_delta' && ev.delta?.text) {
-                  assistant.content += ev.delta.text;
-                  this.scrollDown();
+                  // Mutate via array index so Alpine's proxy picks it up.
+                  this.messages[assistantIdx].content += ev.delta.text;
+                  deltaCount++;
+                  if (deltaCount % 5 === 0) this.scrollDown();
+                } else if (ev.type === 'error') {
+                  throw new Error('AI error: ' + JSON.stringify(ev.error || ev));
                 }
-              } catch (_) { /* keep streaming through stray lines */ }
+              } catch (e) {
+                if (e instanceof SyntaxError) continue; // tolerate stray lines
+                throw e;
+              }
             }
           }
+          console.log('[hugin] stream done; deltas=' + deltaCount + ' content_len=' + this.messages[assistantIdx].content.length);
+          if (deltaCount === 0) {
+            throw new Error('AI returned no content. Check browser console for details.');
+          }
         } catch (e) {
+          console.error('[hugin] send failed', e);
           this.error = e.message;
           // remove the empty assistant bubble if AI never produced content
-          if (!assistant.content) this.messages.pop();
+          if (!this.messages[assistantIdx].content) this.messages.splice(assistantIdx, 1);
         } finally {
-          assistant.streaming = false;
+          if (this.messages[assistantIdx]) this.messages[assistantIdx].streaming = false;
           this.streaming = false;
           this.scrollDown();
         }
