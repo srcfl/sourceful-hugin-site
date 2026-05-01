@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signing in… — Hugin</title>
+<meta name="robots" content="noindex">
+
+<link href="https://api.fontshare.com/css?f[]=satoshi@300,400,500,700,900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --color-ground-paper: #0A0A0A;
+    --color-ground-cream: #161616;
+    --color-ground-ink: #F5F2E1;
+    --color-signal-orange: #E85D1F;
+    --color-text-near-black: #F5F2E1;
+    --color-text-muted: #9CA3AF;
+    --color-border-whisper: rgba(245, 242, 225, 0.12);
+  }
+  html, body {
+    margin: 0; padding: 0; min-height: 100dvh;
+    font-family: "Satoshi", system-ui, sans-serif;
+    background: var(--color-ground-paper); color: var(--color-text-near-black);
+    color-scheme: dark;
+  }
+  body {
+    display: flex; align-items: center; justify-content: center;
+    text-align: center;
+  }
+  .card {
+    max-width: 28rem; padding: 2rem;
+  }
+  .micro-label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px; letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-signal-orange);
+  }
+  h1 { font-size: 2rem; font-weight: 900; letter-spacing: -0.02em; margin: 0.5rem 0 1rem; }
+  p { color: var(--color-text-muted); line-height: 1.5; }
+  .err { color: #FF6B6B; }
+  a { color: var(--color-signal-orange); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="micro-label">Signing you in</div>
+  <h1 id="title">Just a sec…</h1>
+  <p id="msg">Finishing up the GitHub handshake.</p>
+</div>
+
+<script>
+  // Token comes back in the URL fragment so it never hits our server logs.
+  // Pick it out, stash in localStorage, and bounce to the chat page.
+  (function () {
+    const titleEl = document.getElementById('title');
+    const msgEl = document.getElementById('msg');
+
+    const frag = window.location.hash.startsWith('#')
+      ? window.location.hash.slice(1)
+      : window.location.hash;
+    const params = new URLSearchParams(frag);
+    const token = params.get('token');
+
+    if (!token) {
+      titleEl.textContent = 'Sign-in failed.';
+      msgEl.classList.add('err');
+      msgEl.innerHTML = 'No token returned from GitHub. <a href="/chat.html">Try again</a>.';
+      return;
+    }
+
+    try {
+      localStorage.setItem('hugin.gh_token', token);
+    } catch (e) {
+      titleEl.textContent = 'Browser blocked storage.';
+      msgEl.classList.add('err');
+      msgEl.textContent = 'Hugin needs localStorage to remember you. Allow it for this site, then sign in again.';
+      return;
+    }
+
+    // Wipe the token from the URL before bouncing on, so it doesn't end up
+    // in the next page's referer.
+    history.replaceState(null, '', '/auth-success.html');
+    window.location.replace('/chat.html');
+  })();
+</script>
+
+</body>
+</html>
