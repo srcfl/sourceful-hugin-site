@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI authoring — Hugin</title>
+<meta name="description" content="Write a Lua driver for forty-two-watts with AI. Submit it to the open Hugin driver library.">
+
+<link href="https://api.fontshare.com/css?f[]=satoshi@300,400,500,700,900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+<style>
+  :root {
+    --color-ground-paper: #0A0A0A;
+    --color-ground-cream: #161616;
+    --color-ground-ink: #F5F2E1;
+    --color-signal-orange: #E85D1F;
+    --color-signal-orange-600: #FF7A3D;
+    --color-confirmed-green: #22C55E;
+    --color-text-near-black: #F5F2E1;
+    --color-text-muted: #9CA3AF;
+    --color-border-whisper: rgba(245, 242, 225, 0.12);
+    --color-border-subtle: rgba(245, 242, 225, 0.06);
+  }
+  html { font-family: "Satoshi", system-ui, sans-serif; background: var(--color-ground-paper); color: var(--color-text-near-black); color-scheme: dark; }
+  body { background: var(--color-ground-paper); }
+  .font-mono { font-family: "JetBrains Mono", monospace; }
+  .micro-label { font-family: "JetBrains Mono", monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+  [x-cloak] { display: none !important; }
+
+  /* Chat message rendering */
+  .msg-content { white-space: pre-wrap; word-wrap: break-word; }
+  .msg-content code { font-family: "JetBrains Mono", monospace; background: rgba(245, 242, 225, 0.08); padding: 1px 4px; border-radius: 2px; font-size: 0.9em; }
+  .msg-content pre { background: var(--color-ground-cream); padding: 1rem; overflow-x: auto; border: 1px solid var(--color-border-whisper); margin: 0.75rem 0; }
+  .msg-content pre code { background: transparent; padding: 0; font-size: 0.85em; line-height: 1.5; }
+
+  /* blinking cursor while streaming */
+  .cursor::after { content: "▍"; color: var(--color-signal-orange); animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  textarea { resize: none; }
+</style>
+
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          paper: 'var(--color-ground-paper)',
+          cream: 'var(--color-ground-cream)',
+          ink: 'var(--color-ground-ink)',
+          orange: { 500: '#E85D1F', 600: '#FF7A3D', 400: '#FF9966' },
+          'confirmed-green': 'var(--color-confirmed-green)',
+          'destructive-red': '#FF6B6B',
+          'text-primary': 'var(--color-text-near-black)',
+          'text-muted': 'var(--color-text-muted)',
+          'border-whisper': 'var(--color-border-whisper)',
+          'border-subtle': 'var(--color-border-subtle)',
+        },
+        fontFamily: {
+          sans: '"Satoshi", system-ui, sans-serif',
+          mono: '"JetBrains Mono", monospace',
+        },
+      },
+    },
+  };
+</script>
+</head>
+<body class="min-h-dvh flex flex-col bg-paper text-text-primary antialiased"
+      x-data="chat()" x-init="init()">
+
+<nav class="max-w-7xl mx-auto w-full px-6 py-6 flex items-center justify-between gap-4 flex-shrink-0">
+  <a href="/" class="flex items-center gap-2 text-lg font-bold tracking-tight text-ink no-underline">
+    <span class="w-3 h-3 bg-orange-500 inline-block"></span>
+    Hugin
+  </a>
+  <div class="flex items-center gap-6">
+    <a href="/catalog.html" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">Catalog</a>
+    <a href="/chat.html" class="hidden sm:inline text-sm font-medium text-orange-500 transition-colors no-underline">Author</a>
+    <template x-if="user">
+      <div class="flex items-center gap-3">
+        <span class="hidden sm:inline font-mono text-xs text-text-muted" x-text="'@' + user"></span>
+        <button @click="signOut()" class="text-sm font-medium text-text-muted hover:text-orange-500 transition-colors">Sign out</button>
+      </div>
+    </template>
+  </div>
+</nav>
+
+<!-- Sign-in screen -->
+<section x-show="!token" x-cloak class="flex-1 flex items-center justify-center px-6 py-12">
+  <div class="max-w-xl text-center">
+    <div class="micro-label text-orange-500 mb-3">AI authoring</div>
+    <h1 class="text-4xl md:text-6xl font-black tracking-tight leading-[1.05] mb-6">
+      Write a driver in minutes.
+    </h1>
+    <p class="text-lg text-text-muted leading-relaxed mb-12 max-w-prose mx-auto">
+      Describe an inverter, meter, or charger. AI drafts a working Lua driver
+      against forty-two-watts. Submit when happy — opens a PR in your name on
+      <a href="https://github.com/srcfl/hugin-drivers" class="text-ink underline decoration-orange-500 underline-offset-4 hover:text-orange-500">srcfl/hugin-drivers</a>.
+    </p>
+    <a :href="apiBase + '/v1/auth/login'"
+       class="inline-flex items-center gap-3 bg-ink text-paper px-6 py-4 text-base font-medium rounded-none hover:bg-orange-500 hover:text-paper transition-colors no-underline">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.4 3-.405 1.02.005 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>
+      </svg>
+      Sign in with GitHub
+    </a>
+    <p class="mt-6 text-xs font-mono text-text-muted">Scope: <span class="text-ink">public_repo</span> — only used to fork + open PRs in your name.</p>
+  </div>
+</section>
+
+<!-- Chat surface -->
+<section x-show="token" x-cloak class="flex-1 flex flex-col min-h-0 px-6 pb-6 max-w-4xl mx-auto w-full">
+
+  <!-- Empty state -->
+  <div x-show="messages.length === 0" x-cloak class="flex-1 flex items-center justify-center">
+    <div class="max-w-md text-center">
+      <div class="micro-label text-orange-500 mb-3">Start</div>
+      <h2 class="text-2xl md:text-3xl font-black tracking-tight mb-4">What device do you want to integrate?</h2>
+      <p class="text-text-muted leading-relaxed mb-6">
+        Describe the manufacturer + model. The AI will ask follow-up questions about
+        protocol, register layout, and capabilities.
+      </p>
+      <div class="grid gap-2 text-sm">
+        <button @click="seed('Sungrow SH10RT hybrid inverter — Modbus TCP on port 502, supports battery + PV')"
+                class="text-left p-3 border border-border-whisper hover:border-orange-500 hover:text-orange-500 transition-colors text-text-muted">
+          <span class="micro-label text-text-muted">try</span>
+          <div class="mt-1 font-mono text-xs">Sungrow SH10RT hybrid inverter — Modbus TCP…</div>
+        </button>
+        <button @click="seed('Shelly Pro 3EM smart meter — pulls power readings via HTTP /rpc/EM.GetStatus')"
+                class="text-left p-3 border border-border-whisper hover:border-orange-500 hover:text-orange-500 transition-colors text-text-muted">
+          <span class="micro-label text-text-muted">try</span>
+          <div class="mt-1 font-mono text-xs">Shelly Pro 3EM smart meter — HTTP /rpc/EM…</div>
+        </button>
+        <button @click="seed('Easee Home wallbox — uses Easee Cloud API; needs OAuth bearer to start/stop charging')"
+                class="text-left p-3 border border-border-whisper hover:border-orange-500 hover:text-orange-500 transition-colors text-text-muted">
+          <span class="micro-label text-text-muted">try</span>
+          <div class="mt-1 font-mono text-xs">Easee Home wallbox — Cloud API…</div>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Messages -->
+  <div x-show="messages.length > 0" x-cloak x-ref="messageList" class="flex-1 overflow-y-auto py-6 space-y-6 min-h-0">
+    <template x-for="(m, idx) in messages" :key="idx">
+      <article class="flex gap-4">
+        <div class="micro-label flex-shrink-0 w-20 pt-1"
+             :class="m.role === 'user' ? 'text-orange-500' : 'text-text-muted'"
+             x-text="m.role === 'user' ? 'you' : 'hugin'"></div>
+        <div class="flex-1 min-w-0">
+          <div class="msg-content text-base leading-relaxed"
+               :class="m.streaming && idx === messages.length - 1 ? 'cursor' : ''"
+               x-html="render(m.content)"></div>
+        </div>
+      </article>
+    </template>
+    <div x-show="error" x-cloak class="flex gap-4">
+      <div class="micro-label text-destructive-red w-20 pt-1">error</div>
+      <div class="flex-1 text-sm font-mono text-destructive-red" x-text="error"></div>
+    </div>
+  </div>
+
+  <!-- Submit bar -->
+  <div x-show="extractedDriver()" x-cloak class="border border-orange-500 p-4 flex items-center justify-between gap-4 my-3">
+    <div class="text-sm">
+      <span class="micro-label text-orange-500">Ready</span>
+      <span class="ml-2 font-mono text-xs" x-text="extractedDriver()?.id ? 'driver: ' + extractedDriver().id : 'lua block detected'"></span>
+    </div>
+    <button @click="submitDriver()"
+            :disabled="submitting"
+            class="bg-orange-500 hover:bg-orange-600 text-paper px-5 py-2 text-sm font-medium rounded-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+      <span x-show="!submitting">Submit as PR</span>
+      <span x-show="submitting" x-cloak>Submitting…</span>
+    </button>
+  </div>
+
+  <div x-show="prURL" x-cloak class="border border-confirmed-green p-4 my-3">
+    <span class="micro-label text-confirmed-green">PR opened</span>
+    <a :href="prURL" target="_blank" rel="noopener"
+       class="ml-3 font-mono text-sm text-ink hover:text-orange-500 break-all"
+       x-text="prURL"></a>
+  </div>
+
+  <!-- Input -->
+  <div class="border-t border-border-whisper pt-4 pb-2 flex-shrink-0">
+    <form @submit.prevent="send()" class="flex items-end gap-3">
+      <textarea x-model="input"
+                @keydown.meta.enter="send()"
+                @keydown.ctrl.enter="send()"
+                rows="3"
+                :disabled="streaming"
+                placeholder="Describe the device, paste a register list, ask a follow-up… (⌘/Ctrl+Enter to send)"
+                class="flex-1 bg-transparent text-base text-ink placeholder:text-text-muted/60 px-0 py-2 border-0 border-b border-border-whisper focus:border-orange-500 focus:outline-none focus:ring-0 transition-colors disabled:opacity-50"></textarea>
+      <button type="submit"
+              :disabled="!input.trim() || streaming"
+              class="flex-shrink-0 bg-ink text-paper px-5 py-2.5 text-sm font-medium rounded-none hover:bg-orange-500 hover:text-paper transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+        <span x-show="!streaming">Send</span>
+        <span x-show="streaming" x-cloak>…</span>
+      </button>
+    </form>
+  </div>
+</section>
+
+<script>
+  const API_BASE = 'https://api.hugin.sourceful-labs.net';
+
+  // System prompt: the AI's anchor. Describes the driver format, sign
+  // conventions, and how to interview the user. Kept inline so iterating
+  // doesn't need a backend change.
+  const SYSTEM_PROMPT = `You are Hugin's driver-authoring assistant. You help users write Lua drivers for forty-two-watts (an open-source EMS) — drivers that get submitted as PRs to the public srcfl/hugin-drivers library.
+
+## Driver format
+
+A forty-two-watts driver is a single .lua file with:
+
+\`\`\`lua
+DRIVER = {
+  id = "manufacturer_model",          -- snake_case, becomes filename + slug
+  name = "Manufacturer Model Name",
+  manufacturer = "Manufacturer",
+  version = "1.0.0",
+  protocols = { "modbus" },           -- subset of: modbus, mqtt, http
+  capabilities = { "meter", "pv" },   -- subset of: meter, pv, battery, ev
+  tested_models = { "MODEL-X" },
+  verification_status = "experimental", -- experimental | beta | production
+  verification_notes = "Drafted via Hugin AI; not yet verified on live hardware.",
+  description = "One-sentence purpose.",
+  homepage = "https://manufacturer.com/product",
+  connection_defaults = { port = 502, slave_id = 1 },
+}
+
+PROTOCOL = "modbus"  -- or "mqtt" or "http"
+
+function driver_init(config)
+  host.set_make("Manufacturer")
+  host.set_sn(config.serial or "unknown")
+  -- store config in upvalues if needed
+end
+
+function driver_poll()
+  -- read registers / fetch HTTP / etc
+  local power = host.modbus_read(0x4000, 2, "i32_be")
+  if power then
+    host.emit("meter", { power_w = -power })  -- sign convention: + into site
+  end
+  return 5000  -- next poll in ms (return 0 for default)
+end
+
+function driver_command(action, power_w, cmd)
+  -- only relevant for batteries/EVs
+end
+
+function driver_default_mode()
+  -- called on watchdog timeout
+end
+
+function driver_cleanup()
+  -- close connections
+end
+\`\`\`
+
+## Sign convention (forty-two-watts canonical — DON'T BREAK THIS)
+
+- Positive watts = flowing INTO the site at the grid meter boundary
+- Grid import = +, grid export = −
+- PV generation = always negative
+- Battery: charge = +, discharge = −
+- The driver is the ONLY layer that flips signs
+
+## Host API (capability-gated; injected as global \`host\`)
+
+- \`host.log(level, msg)\` — level ∈ debug|info|warn|error
+- \`host.millis()\` — monotonic clock
+- \`host.set_poll_interval(ms)\` — override default 5s
+- \`host.set_make(s)\`, \`host.set_sn(s)\` — anchor hardware identity
+- \`host.emit("meter"|"pv"|"battery"|"ev", { ... })\` — telemetry payload
+- \`host.emit_metric(name, value)\` — diagnostic counter
+- \`host.modbus_read(addr, count, kind)\` — kind ∈ u16 | i16 | u32_be | u32_le | i32_be | i32_le | f32_be | f32_le
+- \`host.modbus_write(addr, value)\`, \`host.modbus_write_multi(addr, values)\`
+- \`host.mqtt_sub(topic)\`, \`host.mqtt_pub(topic, payload)\`, \`host.mqtt_messages()\`
+- \`host.http_get(url, headers)\`, \`host.http_post(url, body, headers)\` — return (body, nil) or (nil, error)
+- \`host.json_encode\`, \`host.json_decode\`
+- \`host.decode_u32_le\`, \`host.decode_u32_be\`, \`host.decode_i32_le\`, \`host.decode_i32_be\`, \`host.decode_i16\`
+
+## How to behave
+
+1. **First message:** if the user hasn't given enough info, ask 1-3 short questions. Ideal targets:
+   - Manufacturer + model
+   - Protocol (Modbus TCP? Modbus RTU? MQTT? HTTP?)
+   - Connection details (IP/host, port, register list, API endpoints)
+   - Capabilities to expose (meter? PV? battery? EV charger?)
+2. **When you have enough:** draft a complete driver in a single \`\`\`lua code block. Always include the full DRIVER table, PROTOCOL, and all required lifecycle functions. Use realistic register addresses if known; mark guesses with TODO comments.
+3. **On iteration:** if the user pushes back ("battery value looks wrong, it's signed"), produce a NEW full-file lua block. Don't output diffs — always full file. The user will submit the latest one.
+4. **Be terse.** Energy-tech users are technical; skip pleasantries. Show, don't lecture.
+5. **Don't invent:** if you don't know the registers, say so and ask the user to paste from manual / scan.
+
+The user can submit your latest driver as a PR with one click. So make every \`\`\`lua block production-shippable.`;
+
+  function chat() {
+    return {
+      apiBase: API_BASE,
+      token: null,
+      user: null,
+      messages: [],
+      input: '',
+      streaming: false,
+      submitting: false,
+      error: null,
+      prURL: null,
+
+      init() {
+        this.token = localStorage.getItem('hugin.gh_token');
+        if (this.token) this.fetchMe();
+      },
+
+      async fetchMe() {
+        try {
+          const r = await fetch(API_BASE + '/v1/me', {
+            headers: { 'Authorization': 'Bearer ' + this.token },
+          });
+          if (r.status === 401) { this.signOut(); return; }
+          if (!r.ok) throw new Error('me ' + r.status);
+          const me = await r.json();
+          this.user = me.login || me.user || 'unknown';
+        } catch (e) {
+          this.user = '?';
+        }
+      },
+
+      signOut() {
+        localStorage.removeItem('hugin.gh_token');
+        this.token = null;
+        this.user = null;
+        this.messages = [];
+        this.prURL = null;
+      },
+
+      seed(text) { this.input = text; setTimeout(() => this.send(), 50); },
+
+      async send() {
+        const text = this.input.trim();
+        if (!text || this.streaming) return;
+        this.error = null;
+        this.prURL = null;
+        this.input = '';
+        this.messages.push({ role: 'user', content: text });
+        const assistant = { role: 'assistant', content: '', streaming: true };
+        this.messages.push(assistant);
+        this.streaming = true;
+        this.scrollDown();
+
+        try {
+          const resp = await fetch(API_BASE + '/v1/ai/messages', {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + this.token,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'claude-opus-4-7',
+              max_tokens: 4096,
+              stream: true,
+              system: SYSTEM_PROMPT,
+              messages: this.messages
+                .filter(m => m.role !== 'assistant' || m.content)
+                .map(m => ({ role: m.role, content: m.content })),
+            }),
+          });
+          if (resp.status === 401) { this.signOut(); throw new Error('Session expired. Please sign in again.'); }
+          if (!resp.ok) {
+            const t = await resp.text();
+            throw new Error('AI ' + resp.status + ': ' + t.slice(0, 200));
+          }
+
+          const reader = resp.body.getReader();
+          const decoder = new TextDecoder();
+          let buf = '';
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split('\n');
+            buf = lines.pop();
+            for (const line of lines) {
+              if (!line.startsWith('data:')) continue;
+              const payload = line.slice(5).trim();
+              if (!payload || payload === '[DONE]') continue;
+              try {
+                const ev = JSON.parse(payload);
+                if (ev.type === 'content_block_delta' && ev.delta?.text) {
+                  assistant.content += ev.delta.text;
+                  this.scrollDown();
+                }
+              } catch (_) { /* keep streaming through stray lines */ }
+            }
+          }
+        } catch (e) {
+          this.error = e.message;
+          // remove the empty assistant bubble if AI never produced content
+          if (!assistant.content) this.messages.pop();
+        } finally {
+          assistant.streaming = false;
+          this.streaming = false;
+          this.scrollDown();
+        }
+      },
+
+      scrollDown() {
+        this.$nextTick(() => {
+          const el = this.$refs.messageList;
+          if (el) el.scrollTop = el.scrollHeight;
+        });
+      },
+
+      // Render text as HTML, escaping then inflating ```lang code blocks
+      // and `inline` codes. Light-touch markdown — don't pull a full lib.
+      render(text) {
+        if (!text) return '';
+        let html = text
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+        // ```lang\n...\n``` blocks
+        html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, body) => {
+          return `<pre><code class="lang-${lang}">${body}</code></pre>`;
+        });
+        // inline `code`
+        html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+        return html;
+      },
+
+      // Pull the latest ```lua block out of the latest assistant message,
+      // and try to extract the DRIVER.id field. Returns null if no usable
+      // block is present.
+      extractedDriver() {
+        for (let i = this.messages.length - 1; i >= 0; i--) {
+          const m = this.messages[i];
+          if (m.role !== 'assistant' || !m.content) continue;
+          const m1 = /```(?:lua)?\n([\s\S]*?DRIVER\s*=\s*\{[\s\S]*?)\n```/.exec(m.content);
+          if (!m1) return null;
+          const lua = m1[1];
+          const m2 = /\bid\s*=\s*"([^"]+)"/.exec(lua);
+          return { id: m2 ? m2[1] : null, lua };
+        }
+        return null;
+      },
+
+      async submitDriver() {
+        const d = this.extractedDriver();
+        if (!d) return;
+        if (!d.id) {
+          this.error = 'No DRIVER.id found in the Lua block. Ask the AI to add one.';
+          return;
+        }
+        this.submitting = true;
+        this.error = null;
+        this.prURL = null;
+        try {
+          const resp = await fetch(API_BASE + '/v1/pr', {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + this.token,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              driver_id: d.id,
+              lua_source: d.lua,
+              title: 'drivers: add ' + d.id,
+              body: 'Drafted via Hugin AI authoring (https://hugin.sourceful-labs.net/chat.html).',
+            }),
+          });
+          if (resp.status === 401) { this.signOut(); throw new Error('Session expired. Please sign in again.'); }
+          const body = await resp.json();
+          if (!resp.ok) throw new Error(body.error || ('PR ' + resp.status));
+          this.prURL = body.pr_url;
+          this.scrollDown();
+        } catch (e) {
+          this.error = 'Submit failed: ' + e.message;
+        } finally {
+          this.submitting = false;
+        }
+      },
+    };
+  }
+</script>
+
+</body>
+</html>
