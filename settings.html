@@ -322,6 +322,30 @@
           this.form.url = url;
           this.form.token = tok || '';
         }
+
+        // Hand-off from `hugin-agent` itself: when the agent boots it
+        // opens this page with #agent_url=…&token=… so the user doesn't
+        // have to copy-paste from the terminal. Fragment never reaches
+        // the server. We pre-fill, auto-Test, and clear the fragment so
+        // the token doesn't sit in the address bar / browser history.
+        const frag = window.location.hash.startsWith('#')
+          ? window.location.hash.slice(1)
+          : '';
+        if (frag) {
+          const params = new URLSearchParams(frag);
+          const urlFromAgent = params.get('agent_url');
+          const tokFromAgent = params.get('token');
+          if (urlFromAgent) this.form.url = urlFromAgent;
+          if (tokFromAgent) this.form.token = tokFromAgent;
+          // Scrub the URL — same trick auth-success.html uses.
+          history.replaceState(null, '', window.location.pathname);
+          if (urlFromAgent && tokFromAgent) {
+            // Run a Test so the user sees "Connection successful" without
+            // having to click anything. Save still requires explicit click
+            // — keeps the user in control if they're suspicious.
+            this.$nextTick(() => this.testConnection());
+          }
+        }
       },
 
       // Strip trailing slash so '/v1/info' doesn't double up.
