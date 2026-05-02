@@ -41,6 +41,30 @@
   @keyframes blink { 50% { opacity: 0; } }
 
   textarea { resize: none; }
+
+  /* Agent-role message bubble — visually distinct from user/assistant */
+  .agent-bubble {
+    background: var(--color-ground-cream);
+    border-left: 2px solid var(--color-signal-orange);
+    padding: 0.75rem 1rem;
+  }
+  .agent-bubble pre {
+    background: rgba(0, 0, 0, 0.35);
+    margin-top: 0.5rem;
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  .agent-bubble .agent-url {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: var(--color-text-muted);
+  }
+  .agent-bubble .agent-summary {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 13px;
+    color: var(--color-ground-ink);
+  }
 </style>
 
 <script>
@@ -79,6 +103,20 @@
   <div class="flex items-center gap-6">
     <a href="/catalog.html" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">Catalog</a>
     <a href="/chat.html" class="hidden sm:inline text-sm font-medium text-orange-500 transition-colors no-underline">Author</a>
+    <!-- Agent pairing status pill. Read-only; full UI lives in /settings.html. localStorage: hugin.agent_url. -->
+    <template x-if="agentURL">
+      <span class="hidden sm:inline-flex items-center gap-1.5 font-mono text-xs text-text-muted" :title="agentURL">
+        <span class="w-1.5 h-1.5 rounded-full bg-confirmed-green inline-block"></span>
+        agent
+      </span>
+    </template>
+    <template x-if="!agentURL">
+      <a href="/settings.html?return=/chat.html"
+         class="hidden sm:inline-flex items-center gap-1.5 font-mono text-xs text-text-muted hover:text-ink transition-colors no-underline">
+        <span class="w-1.5 h-1.5 rounded-full bg-orange-500 inline-block"></span>
+        agent
+      </a>
+    </template>
     <template x-if="user">
       <div class="flex items-center gap-3">
         <span class="hidden sm:inline font-mono text-xs text-text-muted" x-text="'@' + user"></span>
@@ -148,12 +186,24 @@
     <template x-for="(m, idx) in messages" :key="idx">
       <article class="flex gap-4">
         <div class="micro-label flex-shrink-0 w-20 pt-1"
-             :class="m.role === 'user' ? 'text-orange-500' : 'text-text-muted'"
-             x-text="m.role === 'user' ? 'you' : 'hugin'"></div>
+             :class="m.role === 'user' ? 'text-orange-500' : (m.role === 'agent' ? 'text-orange-500' : 'text-text-muted')"
+             x-text="m.role === 'user' ? 'you' : (m.role === 'agent' ? 'agent' : 'hugin')"></div>
         <div class="flex-1 min-w-0">
-          <div class="msg-content text-base leading-relaxed"
-               :class="m.streaming && idx === messages.length - 1 ? 'cursor' : ''"
-               x-html="render(m.content)"></div>
+          <template x-if="m.role !== 'agent'">
+            <div class="msg-content text-base leading-relaxed"
+                 :class="m.streaming && idx === messages.length - 1 ? 'cursor' : ''"
+                 x-html="render(m.content)"></div>
+          </template>
+          <template x-if="m.role === 'agent'">
+            <div class="agent-bubble">
+              <div class="flex items-baseline justify-between gap-3 mb-1">
+                <span class="micro-label text-orange-500" x-text="m.kind === 'scan' ? 'scan result' : (m.kind === 'test' ? 'test result' : 'agent')"></span>
+                <span class="agent-url" x-text="m.agentLabel || ''"></span>
+              </div>
+              <div class="agent-summary" x-text="m.summary || ''"></div>
+              <pre><code class="lang-json" x-text="m.content"></code></pre>
+            </div>
+          </template>
         </div>
       </article>
     </template>
@@ -184,8 +234,68 @@
        x-text="prURL"></a>
   </div>
 
+  <!-- Inline test-config form (shown when host/port can't be inferred) -->
+  <div x-show="testFormOpen" x-cloak class="border border-border-whisper p-4 my-3 space-y-3">
+    <div class="flex items-baseline justify-between">
+      <span class="micro-label text-orange-500">Test config</span>
+      <button @click="testFormOpen = false" class="text-xs font-mono text-text-muted hover:text-ink">cancel</button>
+    </div>
+    <div class="grid grid-cols-3 gap-3">
+      <label class="block col-span-2">
+        <span class="micro-label text-text-muted">host / IP</span>
+        <input x-model="testForm.host" type="text" placeholder="192.168.1.50"
+               class="mt-1 w-full bg-transparent text-sm font-mono text-ink px-2 py-1 border border-border-whisper focus:border-orange-500 focus:outline-none"/>
+      </label>
+      <label class="block">
+        <span class="micro-label text-text-muted">port</span>
+        <input x-model.number="testForm.port" type="number" placeholder="502"
+               class="mt-1 w-full bg-transparent text-sm font-mono text-ink px-2 py-1 border border-border-whisper focus:border-orange-500 focus:outline-none"/>
+      </label>
+      <label class="block">
+        <span class="micro-label text-text-muted">slave id</span>
+        <input x-model.number="testForm.slave_id" type="number" placeholder="1"
+               class="mt-1 w-full bg-transparent text-sm font-mono text-ink px-2 py-1 border border-border-whisper focus:border-orange-500 focus:outline-none"/>
+      </label>
+      <label class="block col-span-2">
+        <span class="micro-label text-text-muted">duration (ms)</span>
+        <input x-model.number="testForm.duration_ms" type="number" placeholder="30000"
+               class="mt-1 w-full bg-transparent text-sm font-mono text-ink px-2 py-1 border border-border-whisper focus:border-orange-500 focus:outline-none"/>
+      </label>
+    </div>
+    <div class="flex justify-end">
+      <button @click="confirmTest()"
+              :disabled="!testForm.host || agentBusy"
+              class="bg-orange-500 hover:bg-orange-600 text-paper px-4 py-2 text-sm font-medium rounded-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+        Run driver
+      </button>
+    </div>
+  </div>
+
   <!-- Input -->
   <div class="border-t border-border-whisper pt-4 pb-2 flex-shrink-0">
+    <!-- Agent action buttons -->
+    <div class="flex items-center gap-2 mb-3 flex-wrap">
+      <button type="button"
+              @click="runAgentScan()"
+              :disabled="!agentURL || agentBusy"
+              :title="!agentURL ? 'Pair an agent in /settings.html' : 'Scan your LAN with the paired agent'"
+              class="inline-flex items-center gap-2 border border-border-whisper hover:border-orange-500 hover:text-orange-500 text-text-muted px-3 py-1.5 text-xs font-mono rounded-none transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-border-whisper disabled:hover:text-text-muted">
+        <span aria-hidden="true">🔍</span>
+        <span x-show="!agentScanning">Scan my LAN</span>
+        <span x-show="agentScanning" x-cloak>Scanning…</span>
+      </button>
+      <button type="button"
+              @click="runAgentTest()"
+              :disabled="!agentURL || agentBusy || !extractedDriver()"
+              :title="!agentURL ? 'Pair an agent in /settings.html' : (!extractedDriver() ? 'Ask the AI for a driver first' : 'Run the latest Lua block against real hardware')"
+              class="inline-flex items-center gap-2 border border-border-whisper hover:border-orange-500 hover:text-orange-500 text-text-muted px-3 py-1.5 text-xs font-mono rounded-none transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-border-whisper disabled:hover:text-text-muted">
+        <span aria-hidden="true">▶</span>
+        <span x-show="!agentTesting">Test latest driver</span>
+        <span x-show="agentTesting" x-cloak>Testing…</span>
+      </button>
+      <span x-show="agentURL" x-cloak class="ml-auto agent-url" x-text="agentLabel()"></span>
+    </div>
+
     <form @submit.prevent="send()" class="flex items-end gap-3">
       <textarea x-model="input"
                 @keydown.meta.enter="send()"
@@ -297,7 +407,30 @@ end
 4. **Be terse.** Energy-tech users are technical; skip pleasantries. Show, don't lecture.
 5. **Don't invent:** if you don't know the registers, say so and ask the user to paste from manual / scan.
 
-The user can submit your latest driver as a PR with one click. So make every \`\`\`lua block production-shippable.`;
+The user can submit your latest driver as a PR with one click. So make every \`\`\`lua block production-shippable.
+
+## Live agent results
+
+The user may have a local Hugin agent paired (running on their LAN at e.g. http://localhost:19090). When they do, you'll occasionally see fenced blocks in their messages like:
+
+\`\`\`
+[agent scan result]
+192.168.1.50  Sungrow SH10RT (FC43)  ports 502,80
+192.168.1.51  unknown                ports 1883
+[end scan result]
+\`\`\`
+
+…or:
+
+\`\`\`
+[agent test result] ok=false
+emissions: 2
+errors: ["modbus_read 0x4000: timeout"]
+logs: ["driver_init done", "driver_poll: read failed"]
+[end test result]
+\`\`\`
+
+Treat these as **ground truth from real hardware** — they override anything the user previously told you. If a register read fails, change the address or word order. If emissions look wrong (e.g. positive PV value), flip a sign. If a scan reveals an FC43 make/model, lock onto it. Always answer with a fresh, full \`\`\`lua block reflecting the new evidence — the user clicks Test again to re-verify.`;
 
   function chat() {
     return {
@@ -311,9 +444,47 @@ The user can submit your latest driver as a PR with one click. So make every \`\
       error: null,
       prURL: null,
 
+      // Agent pairing — read from localStorage, populated by /settings.html
+      agentURL: '',
+      agentToken: '',
+      agentCapabilities: [],
+      agentBusy: false,        // any in-flight agent call
+      agentScanning: false,
+      agentTesting: false,
+      lastScan: null,          // most recent /v1/scan response
+
+      // Inline test-config form (shown when host can't be inferred)
+      testFormOpen: false,
+      testForm: { host: '', port: 502, slave_id: 1, duration_ms: 30000 },
+
       init() {
         this.token = localStorage.getItem('hugin.gh_token');
         if (this.token) this.fetchMe();
+        this.refreshAgentPairing();
+        // React to pairing changes from another tab (e.g. /settings.html)
+        window.addEventListener('storage', (e) => {
+          if (e.key && e.key.startsWith('hugin.agent_')) this.refreshAgentPairing();
+        });
+      },
+
+      refreshAgentPairing() {
+        this.agentURL = (localStorage.getItem('hugin.agent_url') || '').trim();
+        this.agentToken = (localStorage.getItem('hugin.agent_token') || '').trim();
+        try {
+          const raw = localStorage.getItem('hugin.agent_capabilities');
+          this.agentCapabilities = raw ? JSON.parse(raw) : [];
+          if (!Array.isArray(this.agentCapabilities)) this.agentCapabilities = [];
+        } catch (_) {
+          this.agentCapabilities = [];
+        }
+      },
+
+      agentLabel() {
+        if (!this.agentURL) return '';
+        try {
+          const u = new URL(this.agentURL);
+          return u.host;
+        } catch (_) { return this.agentURL; }
       },
 
       async fetchMe() {
@@ -349,8 +520,9 @@ The user can submit your latest driver as a PR with one click. So make every \`\
 
         // Build the message-history payload BEFORE pushing the empty
         // assistant placeholder so we don't include it in the request.
-        const history = this.messages.map(m => ({ role: m.role, content: m.content }));
-        history.push({ role: 'user', content: text });
+        // buildAPIMessages folds any agent-role messages into the next
+        // user turn as a fenced [agent ...] block.
+        const history = this.buildAPIMessages(text);
 
         this.messages.push({ role: 'user', content: text });
         this.messages.push({ role: 'assistant', content: '', streaming: true });
@@ -467,6 +639,262 @@ The user can submit your latest driver as a PR with one click. So make every \`\
           return { id: m2 ? m2[1] : null, lua };
         }
         return null;
+      },
+
+      // -------------------------------------------------------------
+      // Agent integration: scan + test against the locally paired Hugin
+      // agent. Agent-role messages live in this.messages but are NOT
+      // valid Anthropic roles, so buildAPIMessages folds them into the
+      // next outgoing user turn as plain-text fenced blocks.
+      // -------------------------------------------------------------
+
+      buildAPIMessages(nextUserText) {
+        const out = [];
+        let pendingAgentBlocks = [];
+        const flushInto = (userText) => {
+          const prefix = pendingAgentBlocks.join('\n\n');
+          pendingAgentBlocks = [];
+          return prefix ? prefix + '\n\n' + userText : userText;
+        };
+        for (const m of this.messages) {
+          if (m.role === 'agent') {
+            pendingAgentBlocks.push(this.agentMessageToText(m));
+            continue;
+          }
+          if (m.role === 'user') {
+            out.push({ role: 'user', content: flushInto(m.content) });
+          } else if (m.role === 'assistant' && m.content) {
+            out.push({ role: 'assistant', content: m.content });
+          }
+        }
+        // Append the new user turn (with any trailing agent blocks prefixed)
+        out.push({ role: 'user', content: flushInto(nextUserText) });
+        return out;
+      },
+
+      // Convert an agent-role message into a plain-text block the AI can read.
+      agentMessageToText(m) {
+        const tag = m.kind === 'scan' ? 'agent scan result'
+                  : m.kind === 'test' ? 'agent test result'
+                  : 'agent result';
+        const summary = m.summary ? m.summary + '\n' : '';
+        // Truncate the JSON body so we don't blow the context budget
+        const body = (m.content || '').slice(0, 6000);
+        const closeTag = m.kind === 'scan' ? 'scan result'
+                       : m.kind === 'test' ? 'test result'
+                       : 'agent result';
+        return '```\n[' + tag + ']\n' + summary + body + '\n[end ' + closeTag + ']\n```';
+      },
+
+      async agentFetch(path, body) {
+        if (!this.agentURL) throw new Error('No agent paired. Open /settings.html to pair.');
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 30000);
+        try {
+          const resp = await fetch(this.agentURL.replace(/\/$/, '') + path, {
+            method: 'POST',
+            mode: 'cors',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(this.agentToken ? { 'Authorization': 'Bearer ' + this.agentToken } : {}),
+            },
+            body: JSON.stringify(body || {}),
+            signal: ctrl.signal,
+          });
+          if (resp.status === 401) {
+            throw new Error('401 — agent token expired or invalid. Re-pair in /settings.html.');
+          }
+          const text = await resp.text();
+          let parsed = null;
+          try { parsed = text ? JSON.parse(text) : null; } catch (_) { /* not JSON */ }
+          if (!resp.ok) {
+            const msg = (parsed && (parsed.error || parsed.message)) || text || ('HTTP ' + resp.status);
+            throw new Error(msg.toString().slice(0, 240));
+          }
+          return parsed || {};
+        } catch (e) {
+          if (e.name === 'AbortError') throw new Error('Agent timed out after 30s.');
+          if (e instanceof TypeError) throw new Error('Agent unreachable at ' + this.agentURL + ' (' + e.message + ').');
+          throw e;
+        } finally {
+          clearTimeout(timer);
+        }
+      },
+
+      async runAgentScan() {
+        if (!this.agentURL || this.agentBusy) return;
+        this.error = null;
+        this.agentBusy = true;
+        this.agentScanning = true;
+        try {
+          const result = await this.agentFetch('/v1/scan', {});
+          const devices = Array.isArray(result.devices) ? result.devices : [];
+          this.lastScan = result;
+          // Build a one-line-per-device summary the user (and AI) can skim
+          const lines = devices.map(d => {
+            const ports = (d.open_ports || []).join(',');
+            const fc = d.modbus && (d.modbus.fc43_make || d.modbus.fc43_model)
+              ? ` [${[d.modbus.fc43_make, d.modbus.fc43_model].filter(Boolean).join(' ')}]`
+              : '';
+            const vendor = d.vendor_oui ? ' ' + d.vendor_oui : '';
+            return `${d.ip || '?'}  ${d.mac || ''}${vendor}${fc}${ports ? '  ports ' + ports : ''}`;
+          });
+          const summary = devices.length
+            ? `${devices.length} device${devices.length === 1 ? '' : 's'} found`
+            : 'no devices found';
+          this.messages.push({
+            role: 'agent',
+            kind: 'scan',
+            agentLabel: this.agentLabel(),
+            summary: summary + (lines.length ? ':\n' + lines.join('\n') : ''),
+            content: JSON.stringify(result, null, 2),
+          });
+          // Suggest a follow-up if the input is empty
+          if (!this.input.trim() && devices.length) {
+            const guess = this.guessTopDevice(devices);
+            const guessLabel = guess
+              ? (guess.modbus && (guess.modbus.fc43_make || guess.modbus.fc43_model)
+                  ? `${guess.modbus.fc43_make || ''} ${guess.modbus.fc43_model || ''}`.trim()
+                  : (guess.vendor_oui || guess.ip))
+              : 'the top hit';
+            this.input = `We found ${devices.length} device${devices.length === 1 ? '' : 's'} on the LAN — let's start with ${guessLabel}.`;
+          }
+          this.scrollDown();
+          this.$nextTick(() => {
+            const ta = this.$el.querySelector('textarea');
+            if (ta) ta.focus();
+          });
+        } catch (e) {
+          this.error = 'Scan failed: ' + e.message;
+        } finally {
+          this.agentBusy = false;
+          this.agentScanning = false;
+        }
+      },
+
+      // Pick the most "interesting" device from a scan result for seeding text.
+      // Prefers FC43-identified devices, then ones with port 502 (Modbus TCP).
+      guessTopDevice(devices) {
+        if (!devices || !devices.length) return null;
+        const withFC43 = devices.find(d => d.modbus && (d.modbus.fc43_make || d.modbus.fc43_model));
+        if (withFC43) return withFC43;
+        const withModbus = devices.find(d => (d.open_ports || []).includes(502));
+        if (withModbus) return withModbus;
+        return devices[0];
+      },
+
+      // Try to figure out which scanned device this driver is for by
+      // matching DRIVER.manufacturer / DRIVER.id against scan vendor/FC43.
+      inferTestConfig(lua) {
+        const cfg = { host: '', port: 502, slave_id: 1, duration_ms: 30000 };
+        const protoMatch = /PROTOCOL\s*=\s*"([^"]+)"/.exec(lua);
+        const proto = protoMatch ? protoMatch[1] : 'modbus';
+        if (proto === 'mqtt') cfg.port = 1883;
+        if (proto === 'http') cfg.port = 80;
+
+        // Pull a port hint from connection_defaults if present
+        const portMatch = /connection_defaults\s*=\s*\{[^}]*port\s*=\s*(\d+)/.exec(lua);
+        if (portMatch) cfg.port = parseInt(portMatch[1], 10);
+        const slaveMatch = /connection_defaults\s*=\s*\{[^}]*slave_id\s*=\s*(\d+)/.exec(lua);
+        if (slaveMatch) cfg.slave_id = parseInt(slaveMatch[1], 10);
+
+        const devices = (this.lastScan && this.lastScan.devices) || [];
+        if (!devices.length) return cfg;
+
+        const mfgMatch = /\bmanufacturer\s*=\s*"([^"]+)"/i.exec(lua);
+        const idMatch = /\bid\s*=\s*"([^"]+)"/.exec(lua);
+        const needles = [mfgMatch && mfgMatch[1], idMatch && idMatch[1]]
+          .filter(Boolean)
+          .map(s => s.toLowerCase());
+
+        // 1. Match against FC43 make/model
+        for (const d of devices) {
+          const fc = ((d.modbus && (d.modbus.fc43_make + ' ' + d.modbus.fc43_model)) || '').toLowerCase();
+          if (fc.trim() && needles.some(n => fc.includes(n) || n.includes(fc.split(' ')[0]))) {
+            cfg.host = d.ip || cfg.host;
+            return cfg;
+          }
+        }
+        // 2. Match against vendor OUI
+        for (const d of devices) {
+          const v = (d.vendor_oui || '').toLowerCase();
+          if (v && needles.some(n => v.includes(n) || n.includes(v))) {
+            cfg.host = d.ip || cfg.host;
+            return cfg;
+          }
+        }
+        // 3. Single-device LAN: just use it
+        if (devices.length === 1) {
+          cfg.host = devices[0].ip || cfg.host;
+        }
+        return cfg;
+      },
+
+      async runAgentTest() {
+        if (!this.agentURL || this.agentBusy) return;
+        const d = this.extractedDriver();
+        if (!d) {
+          this.error = 'No Lua block in chat yet — ask the AI for a driver first.';
+          return;
+        }
+        const cfg = this.inferTestConfig(d.lua);
+        if (!cfg.host) {
+          // Couldn't auto-infer — open the inline form for the user
+          this.testForm = { host: '', port: cfg.port, slave_id: cfg.slave_id, duration_ms: cfg.duration_ms };
+          this.testFormOpen = true;
+          return;
+        }
+        await this.executeTest(d.lua, cfg);
+      },
+
+      async confirmTest() {
+        const d = this.extractedDriver();
+        if (!d) { this.testFormOpen = false; return; }
+        const cfg = {
+          host: this.testForm.host.trim(),
+          port: this.testForm.port || 502,
+          slave_id: this.testForm.slave_id || 1,
+          duration_ms: this.testForm.duration_ms || 30000,
+        };
+        if (!cfg.host) return;
+        this.testFormOpen = false;
+        await this.executeTest(d.lua, cfg);
+      },
+
+      async executeTest(luaSource, cfg) {
+        this.error = null;
+        this.agentBusy = true;
+        this.agentTesting = true;
+        try {
+          const result = await this.agentFetch('/v1/run-lua', {
+            lua_source: luaSource,
+            config: { host: cfg.host, port: cfg.port, slave_id: cfg.slave_id },
+            actions: ['init', 'poll'],
+            duration_ms: cfg.duration_ms,
+          });
+          const ok = result.ok === true;
+          const emissions = Array.isArray(result.emissions) ? result.emissions.length : 0;
+          const errs = Array.isArray(result.errors) ? result.errors : [];
+          const logs = Array.isArray(result.logs) ? result.logs : [];
+          const summaryLines = [
+            `target ${cfg.host}:${cfg.port} (slave ${cfg.slave_id})`,
+            `ok=${ok}  emissions=${emissions}  errors=${errs.length}  logs=${logs.length}`,
+          ];
+          if (errs.length) summaryLines.push('errors: ' + errs.slice(0, 3).join(' | '));
+          this.messages.push({
+            role: 'agent',
+            kind: 'test',
+            agentLabel: this.agentLabel(),
+            summary: summaryLines.join('\n'),
+            content: JSON.stringify(result, null, 2),
+          });
+          this.scrollDown();
+        } catch (e) {
+          this.error = 'Test failed: ' + e.message;
+        } finally {
+          this.agentBusy = false;
+          this.agentTesting = false;
+        }
       },
 
       async submitDriver() {
