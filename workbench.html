@@ -1,0 +1,1615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workbench — Hugin</title>
+<meta name="description" content="Hugin's driver-authoring workbench. Scan, probe, draft, test, submit — Lua drivers for forty-two-watts in minutes.">
+<meta name="robots" content="noindex">
+
+<link href="https://api.fontshare.com/css?f[]=satoshi@300,400,500,700,900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+<!-- CodeMirror 5 via cdnjs.
+     Why 5 and not 6: CM6 ships as ESM and is built around a bundler. With
+     no build step the import-map dance is awkward and brittle. CM5 has a
+     plain UMD bundle and a single-file lua mode — drops in cleanly. Same
+     editor as the desktop app's existing surface, so contributors see a
+     familiar UI either way. -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/lua/lua.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
+
+<style>
+  :root {
+    --color-ground-paper: #0A0A0A;
+    --color-ground-cream: #161616;
+    --color-ground-ink: #F5F2E1;
+    --color-signal-orange: #E85D1F;
+    --color-signal-orange-600: #FF7A3D;
+    --color-confirmed-green: #22C55E;
+    --color-text-near-black: #F5F2E1;
+    --color-text-muted: #9CA3AF;
+    --color-border-whisper: rgba(245, 242, 225, 0.12);
+    --color-border-subtle: rgba(245, 242, 225, 0.06);
+  }
+  html { font-family: "Satoshi", system-ui, sans-serif; background: var(--color-ground-paper); color: var(--color-text-near-black); color-scheme: dark; }
+  body { background: var(--color-ground-paper); }
+  .font-mono { font-family: "JetBrains Mono", monospace; }
+  .micro-label { font-family: "JetBrains Mono", monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+  [x-cloak] { display: none !important; }
+
+  /* CodeMirror styling — dark, sharp corners, JetBrains Mono. */
+  .CodeMirror {
+    height: 100%;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 13px;
+    line-height: 1.55;
+    background: var(--color-ground-paper);
+    color: var(--color-text-near-black);
+    border-radius: 0;
+  }
+  .CodeMirror-gutters {
+    background: var(--color-ground-paper);
+    border-right: 1px solid var(--color-border-subtle);
+  }
+  .CodeMirror-linenumber { color: var(--color-text-muted); opacity: 0.5; }
+  .CodeMirror-cursor { border-left-color: var(--color-signal-orange); }
+  .CodeMirror-selected { background: rgba(232, 93, 31, 0.18) !important; }
+  .CodeMirror-focused .CodeMirror-selected { background: rgba(232, 93, 31, 0.22) !important; }
+  .CodeMirror-activeline-background { background: rgba(245, 242, 225, 0.025); }
+  .cm-s-material-darker.CodeMirror { background: var(--color-ground-paper); }
+
+  textarea { resize: none; }
+
+  /* Pulsing dots */
+  .status-dot { width: 8px; height: 8px; border-radius: 9999px; display: inline-block; }
+  .status-dot.green { background: var(--color-confirmed-green); animation: pulse-green 2s infinite; }
+  .status-dot.orange { background: var(--color-signal-orange); }
+  .status-dot.red { background: var(--color-destructive-red, #FF6B6B); }
+  @keyframes pulse-green {
+    0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6); }
+    70% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+  }
+
+  /* Stream-into-editor indicator */
+  .ai-streaming-pill {
+    position: absolute; right: 12px; top: 12px;
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(232, 93, 31, 0.12);
+    color: var(--color-signal-orange-600);
+    padding: 4px 10px; font-family: "JetBrains Mono", monospace;
+    font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+    pointer-events: none;
+  }
+  .ai-streaming-pill .blink {
+    width: 6px; height: 6px; background: var(--color-signal-orange); border-radius: 9999px;
+    animation: blink 0.8s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* AI-Ask mini-chat bubble */
+  .ai-bubble { background: var(--color-ground-cream); border-left: 2px solid var(--color-signal-orange); padding: 8px 12px; }
+  .ai-bubble.user { border-left-color: var(--color-text-muted); }
+
+  /* Hide scrollbar styling drift in panels */
+  .scroll-y { overflow-y: auto; }
+  .scroll-y::-webkit-scrollbar { width: 6px; }
+  .scroll-y::-webkit-scrollbar-thumb { background: var(--color-border-whisper); }
+  .scroll-y::-webkit-scrollbar-track { background: transparent; }
+</style>
+
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          paper: 'var(--color-ground-paper)',
+          cream: 'var(--color-ground-cream)',
+          ink: 'var(--color-ground-ink)',
+          orange: {
+            50:'#FFF4ED',100:'#FFE8D9',200:'#FFD1B3',300:'#FFBA8C',400:'#FF9966',
+            500:'#E85D1F',600:'#FF7A3D',700:'#C0470F',800:'#8C3409',900:'#582106',950:'#3B1205',
+          },
+          'confirmed-green':'var(--color-confirmed-green)',
+          'destructive-red':'#FF6B6B',
+          'text-primary':'var(--color-text-near-black)',
+          'text-muted':'var(--color-text-muted)',
+          'border-whisper':'var(--color-border-whisper)',
+          'border-subtle':'var(--color-border-subtle)',
+        },
+        fontFamily: {
+          sans: '"Satoshi", system-ui, sans-serif',
+          mono: '"JetBrains Mono", monospace',
+        },
+      },
+    },
+  };
+</script>
+</head>
+<body class="min-h-dvh flex flex-col bg-paper text-text-primary antialiased"
+      x-data="workbench()" x-init="init()">
+
+<!-- =========================================================
+     NAV
+     ========================================================= -->
+<nav class="max-w-[1600px] mx-auto w-full px-6 py-5 flex items-center justify-between gap-4 flex-shrink-0 border-b border-border-whisper">
+  <div class="flex items-center gap-6">
+    <a href="/" class="flex items-center gap-2 text-lg font-bold tracking-tight text-ink no-underline">
+      <span class="w-3 h-3 bg-orange-500 inline-block"></span>
+      Hugin
+    </a>
+    <a href="/catalog.html" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">Catalog</a>
+    <a href="/workbench.html" class="hidden sm:inline text-sm font-medium text-orange-500 transition-colors no-underline">Workbench</a>
+  </div>
+
+  <div class="flex items-center gap-5">
+    <!-- Agent pill -->
+    <template x-if="agentURL">
+      <a href="/settings.html" :title="agentURL"
+         class="hidden sm:inline-flex items-center gap-1.5 font-mono text-xs text-text-muted hover:text-ink transition-colors no-underline">
+        <span class="w-1.5 h-1.5 rounded-full bg-confirmed-green inline-block"></span>
+        agent
+      </a>
+    </template>
+    <template x-if="!agentURL">
+      <a href="/settings.html"
+         class="hidden sm:inline-flex items-center gap-1.5 font-mono text-xs text-text-muted hover:text-ink transition-colors no-underline">
+        <span class="w-1.5 h-1.5 rounded-full bg-orange-500 inline-block"></span>
+        no agent
+      </a>
+    </template>
+
+    <!-- User -->
+    <template x-if="user">
+      <div class="flex items-center gap-3">
+        <span class="hidden sm:inline font-mono text-xs text-text-muted" x-text="'@' + user"></span>
+        <button @click="signOut()" class="text-sm font-medium text-text-muted hover:text-orange-500 transition-colors">Sign out</button>
+      </div>
+    </template>
+    <template x-if="!user && token">
+      <span class="hidden sm:inline font-mono text-xs text-text-muted">@…</span>
+    </template>
+  </div>
+</nav>
+
+<!-- =========================================================
+     SIGN-IN GATE
+     ========================================================= -->
+<section x-show="!token" x-cloak class="flex-1 flex items-center justify-center px-6 py-12">
+  <div class="max-w-xl text-center">
+    <div class="micro-label text-orange-500 mb-3">Workbench</div>
+    <h1 class="text-4xl md:text-6xl font-black tracking-tight leading-[1.05] mb-6">
+      Open the workbench.
+    </h1>
+    <p class="text-lg text-text-muted leading-relaxed mb-12 max-w-prose mx-auto">
+      Scan a device, probe its registers, draft a Lua driver with AI, test
+      against real hardware, submit a PR to
+      <a href="https://github.com/frahlg/forty-two-watts" class="text-ink underline decoration-orange-500 underline-offset-4 hover:text-orange-500">forty-two-watts</a>.
+    </p>
+    <a :href="apiBase + '/v1/auth/login'"
+       class="inline-flex items-center gap-3 bg-ink text-paper px-6 py-4 text-base font-medium rounded-none hover:bg-orange-500 hover:text-paper transition-colors no-underline">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.4 3-.405 1.02.005 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>
+      </svg>
+      Sign in with GitHub
+    </a>
+    <p class="mt-6 text-xs font-mono text-text-muted">Scope: <span class="text-ink">public_repo</span> — only used to fork + open PRs in your name.</p>
+  </div>
+</section>
+
+<!-- =========================================================
+     EMPTY STATE — pick a starting point
+     ========================================================= -->
+<section x-show="token && !workbenchActive" x-cloak class="flex-1 flex items-center justify-center px-6 py-12">
+  <div class="w-full max-w-2xl">
+    <div class="border border-border-whisper bg-paper p-8 md:p-10">
+      <div class="micro-label text-orange-500 mb-3">Start</div>
+      <h2 class="text-2xl md:text-4xl font-black tracking-tight mb-2">Pick a starting point.</h2>
+      <p class="text-text-muted text-sm mb-8 leading-relaxed">
+        Scan your network for unknown devices, paste a manual / register list,
+        or restore a draft you started earlier.
+      </p>
+
+      <!-- Two main actions -->
+      <div class="grid sm:grid-cols-2 gap-px bg-border-whisper border border-border-whisper mb-8">
+        <button @click="scanLAN()"
+                :disabled="!agentURL || scanning"
+                :title="!agentURL ? 'Pair an agent in /settings.html' : 'Scan your LAN with the paired agent'"
+                class="bg-paper p-6 flex flex-col items-start gap-3 hover:bg-cream transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed">
+          <span class="text-2xl" aria-hidden="true">&#128269;</span>
+          <span class="font-bold text-ink">
+            <span x-show="!scanning">Scan my LAN</span>
+            <span x-show="scanning" x-cloak>Scanning&hellip;</span>
+          </span>
+          <span class="text-xs text-text-muted leading-relaxed">
+            <template x-if="agentURL">
+              <span>ARP + Modbus + HTTP probe across your subnet via the paired agent.</span>
+            </template>
+            <template x-if="!agentURL">
+              <span>Requires an agent. <a href="/settings.html" class="underline text-orange-500">Pair one →</a></span>
+            </template>
+          </span>
+        </button>
+
+        <button @click="openManualMode()"
+                class="bg-paper p-6 flex flex-col items-start gap-3 hover:bg-cream transition-colors text-left">
+          <span class="text-2xl" aria-hidden="true">&#128203;</span>
+          <span class="font-bold text-ink">Paste device specs / manual</span>
+          <span class="text-xs text-text-muted leading-relaxed">No agent? Drop in a register list, manual snippet, or vendor doc. AI starts from there.</span>
+        </button>
+      </div>
+
+      <!-- Manual paste form -->
+      <div x-show="manualOpen" x-cloak class="mt-6 border border-border-whisper p-5 space-y-3">
+        <div class="micro-label text-orange-500">Manual mode</div>
+        <input x-model="manual.label" type="text" placeholder="Device label, e.g. Sungrow SH10RT"
+               class="w-full bg-transparent text-sm font-mono text-ink py-2 px-0 border-0 border-b border-border-whisper focus:border-orange-500 focus:outline-none focus:ring-0" />
+        <textarea x-model="manual.specs" rows="8"
+                  placeholder="Paste a register table, a manual excerpt, or a description of the device. Anything Claude should see."
+                  class="w-full bg-transparent text-sm font-mono text-ink py-2 px-0 border border-border-whisper focus:border-orange-500 focus:outline-none focus:ring-0 p-3"></textarea>
+        <div class="flex justify-end gap-3">
+          <button @click="manualOpen = false" class="text-xs font-mono text-text-muted hover:text-ink">cancel</button>
+          <button @click="enterManual()"
+                  :disabled="!manual.specs.trim()"
+                  class="bg-orange-500 hover:bg-orange-600 text-paper px-4 py-2 text-sm font-medium rounded-none transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            Open workbench
+          </button>
+        </div>
+      </div>
+
+      <!-- Scan results -->
+      <div x-show="lastScan && !workbenchActive && !manualOpen" x-cloak class="mt-6 border border-border-whisper">
+        <div class="px-5 py-3 border-b border-border-whisper flex items-center justify-between">
+          <span class="micro-label text-orange-500">Scan results</span>
+          <span class="font-mono text-xs text-text-muted" x-text="(lastScan?.devices?.length || 0) + ' devices'"></span>
+        </div>
+        <template x-if="!(lastScan?.devices?.length)">
+          <div class="px-5 py-6 text-sm text-text-muted">No devices found.</div>
+        </template>
+        <template x-for="d in (lastScan?.devices || [])" :key="(d.ip || '') + (d.mac || '')">
+          <button @click="enterFromScan(d)"
+                  class="w-full text-left px-5 py-3 flex items-center justify-between gap-4 border-b border-border-subtle last:border-b-0 hover:bg-cream transition-colors">
+            <div class="min-w-0">
+              <div class="font-mono text-sm text-ink" x-text="d.ip || '?'"></div>
+              <div class="font-mono text-[11px] text-text-muted truncate"
+                   x-text="[d.modbus?.fc43_make, d.modbus?.fc43_model, d.vendor_oui, d.mac].filter(Boolean).join(' · ') || 'unknown'"></div>
+            </div>
+            <div class="font-mono text-[11px] text-text-muted flex-shrink-0"
+                 x-text="(d.open_ports || []).join(',')"></div>
+          </button>
+        </template>
+      </div>
+
+      <!-- Recent drafts -->
+      <div x-show="drafts.length > 0" x-cloak class="mt-8">
+        <div class="micro-label text-text-muted mb-3 flex items-center justify-between">
+          <span>Recent drafts</span>
+          <span class="font-mono text-text-muted normal-case tracking-normal" x-text="drafts.length + ' / 20'"></span>
+        </div>
+        <div class="border border-border-whisper">
+          <template x-for="d in drafts" :key="d.id">
+            <div class="px-5 py-3 flex items-center justify-between gap-4 border-b border-border-subtle last:border-b-0 hover:bg-cream transition-colors group">
+              <button @click="restoreDraft(d.id)" class="flex-1 text-left min-w-0">
+                <div class="font-bold text-sm text-ink truncate"
+                     x-text="(((d.device?.manufacturer || '') + ' ' + (d.device?.model || '')).trim()) || (d.label || 'Untitled draft')"></div>
+                <div class="font-mono text-[11px] text-text-muted truncate">
+                  <span x-text="relTime(d.updatedAt)"></span>
+                  <span x-show="d.lastTestRun"> &middot; <span x-text="d.lastTestRun?.ok ? 'last test ok' : 'last test failed'"></span></span>
+                  <span x-show="d.prURL"> &middot; <span class="text-confirmed-green">PR opened</span></span>
+                </div>
+              </button>
+              <button @click="deleteDraft(d.id)"
+                      class="font-mono text-[11px] text-text-muted hover:text-destructive-red opacity-0 group-hover:opacity-100 transition-opacity">
+                delete
+              </button>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- Empty-state error toast -->
+    <div x-show="error" x-cloak class="mt-4 border border-destructive-red/50 bg-destructive-red/5 p-4">
+      <div class="micro-label text-destructive-red mb-1">Error</div>
+      <div class="font-mono text-xs text-destructive-red break-words" x-text="error"></div>
+    </div>
+  </div>
+</section>
+
+<!-- =========================================================
+     WORKBENCH (3-pane)
+     ========================================================= -->
+<section x-show="token && workbenchActive" x-cloak class="flex-1 flex flex-col min-h-0">
+
+  <!-- Top bar -->
+  <div class="border-b border-border-whisper px-6 py-3 flex items-center gap-4 flex-shrink-0">
+    <button @click="exitWorkbench()" class="font-mono text-xs text-text-muted hover:text-orange-500">&larr; back</button>
+    <div class="font-mono text-xs text-text-muted truncate flex-1">
+      <span class="text-text-muted">Hugin</span>
+      <span class="mx-2">&middot;</span>
+      <span class="text-text-muted">Workbench</span>
+      <span class="mx-2">&middot;</span>
+      <span class="text-ink" x-text="breadcrumbLabel()"></span>
+    </div>
+    <div class="font-mono text-[11px] text-text-muted hidden md:inline">
+      <span x-show="savedFlash" class="text-confirmed-green" x-cloak>saved &bull;</span>
+      <span x-show="!savedFlash" x-cloak>autosaved</span>
+    </div>
+    <button @click="runTest()"
+            :disabled="!agentURL || testing || mode === 'manual'"
+            :title="mode === 'manual' ? 'Manual mode — no live device' : (!agentURL ? 'Pair an agent in /settings.html' : 'Run driver against ' + (config.host || 'device'))"
+            class="border border-orange-500 text-orange-500 hover:bg-orange-500 hover:text-paper px-4 py-1.5 text-xs font-mono rounded-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+      <span x-show="!testing">&#9654; Test against device</span>
+      <span x-show="testing" x-cloak>Running&hellip;</span>
+    </button>
+    <button @click="submitPR()"
+            :disabled="!canSubmit() || submitting"
+            class="bg-orange-500 hover:bg-orange-600 text-paper px-4 py-1.5 text-xs font-mono font-bold rounded-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+      <span x-show="!submitting">Submit as PR</span>
+      <span x-show="submitting" x-cloak>Submitting&hellip;</span>
+    </button>
+  </div>
+
+  <!-- Tab bar (mobile only) -->
+  <div class="md:hidden border-b border-border-whisper flex flex-shrink-0">
+    <button @click="mobileTab = 'device'"
+            :class="mobileTab === 'device' ? 'text-orange-500 border-orange-500' : 'text-text-muted border-transparent'"
+            class="flex-1 py-2 text-xs font-mono uppercase tracking-wider border-b-2">Device</button>
+    <button @click="mobileTab = 'driver'"
+            :class="mobileTab === 'driver' ? 'text-orange-500 border-orange-500' : 'text-text-muted border-transparent'"
+            class="flex-1 py-2 text-xs font-mono uppercase tracking-wider border-b-2">Driver</button>
+    <button @click="mobileTab = 'live'"
+            :class="mobileTab === 'live' ? 'text-orange-500 border-orange-500' : 'text-text-muted border-transparent'"
+            class="flex-1 py-2 text-xs font-mono uppercase tracking-wider border-b-2">Live</button>
+  </div>
+
+  <!-- Three columns -->
+  <div class="flex-1 grid grid-cols-1 md:grid-cols-[28%_44%_28%] min-h-0">
+
+    <!-- ==============================================
+         DEVICE PANEL (left)
+         ============================================== -->
+    <aside class="border-r border-border-whisper flex flex-col min-h-0"
+           :class="(mobileTab !== 'device' && 'hidden md:flex') || ''">
+      <div class="px-5 py-3 border-b border-border-whisper flex items-center justify-between">
+        <span class="micro-label text-orange-500">Device</span>
+        <span class="font-mono text-[11px] text-text-muted" x-text="mode === 'manual' ? 'manual mode' : (config.host || '—')"></span>
+      </div>
+
+      <div class="flex-1 scroll-y px-5 py-4 space-y-6">
+
+        <!-- Picked device summary -->
+        <div x-show="device" x-cloak class="border border-border-whisper bg-cream p-3 space-y-2">
+          <div class="font-bold text-sm text-ink leading-snug" x-text="(device?.manufacturer || 'Unknown') + ' ' + (device?.model || '')"></div>
+          <div class="font-mono text-[11px] text-text-muted space-y-0.5">
+            <div x-show="device?.ip"><span class="text-text-muted">ip</span> <span class="text-ink" x-text="device?.ip"></span></div>
+            <div x-show="device?.mac"><span class="text-text-muted">mac</span> <span class="text-ink" x-text="device?.mac"></span></div>
+            <div x-show="device?.ports?.length"><span class="text-text-muted">ports</span> <span class="text-ink" x-text="(device?.ports || []).join(',')"></span></div>
+            <div x-show="device?.modbusFingerprint?.fc43_make">
+              <span class="text-text-muted">fc43</span>
+              <span class="text-ink" x-text="(device?.modbusFingerprint?.fc43_make || '') + ' ' + (device?.modbusFingerprint?.fc43_model || '')"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Connection -->
+        <div>
+          <div class="micro-label text-text-muted mb-2">Connection</div>
+          <div class="space-y-2">
+            <label class="block">
+              <span class="micro-label text-text-muted text-[10px]">host</span>
+              <input x-model="config.host" @input="markDirty()" type="text" placeholder="192.168.1.50"
+                     class="mt-1 w-full bg-transparent text-xs font-mono text-ink py-1.5 px-2 border border-border-whisper focus:border-orange-500 focus:outline-none focus:ring-0" />
+            </label>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="block">
+                <span class="micro-label text-text-muted text-[10px]">port</span>
+                <input x-model.number="config.port" @input="markDirty()" type="number" placeholder="502"
+                       class="mt-1 w-full bg-transparent text-xs font-mono text-ink py-1.5 px-2 border border-border-whisper focus:border-orange-500 focus:outline-none focus:ring-0" />
+              </label>
+              <label class="block">
+                <span class="micro-label text-text-muted text-[10px]">slave</span>
+                <input x-model.number="config.slave_id" @input="markDirty()" type="number" placeholder="1"
+                       class="mt-1 w-full bg-transparent text-xs font-mono text-ink py-1.5 px-2 border border-border-whisper focus:border-orange-500 focus:outline-none focus:ring-0" />
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Probed registers -->
+        <div>
+          <div class="micro-label text-text-muted mb-2 flex items-center justify-between">
+            <span>Probed registers</span>
+            <button @click="openProbe()"
+                    :disabled="!agentURL || mode === 'manual'"
+                    class="font-mono text-[11px] text-orange-500 hover:text-orange-600 normal-case tracking-normal disabled:opacity-30 disabled:cursor-not-allowed">+ Probe register</button>
+          </div>
+          <template x-if="!probedRegisters.length">
+            <div class="font-mono text-[11px] text-text-muted">No probes yet.</div>
+          </template>
+          <div class="space-y-1.5">
+            <template x-for="(r, idx) in probedRegisters" :key="idx">
+              <div class="border border-border-subtle px-2 py-1.5 font-mono text-[11px] flex items-center justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="text-ink" x-text="'0x' + (r.addr || 0).toString(16).padStart(4,'0') + ' &middot; ' + (r.kind || 'u16')"></div>
+                  <div class="text-text-muted truncate" x-text="(r.value !== undefined ? 'val ' + r.value : '') + (r.raw_hex ? ' &middot; ' + r.raw_hex : '')"></div>
+                </div>
+                <button @click="probedRegisters.splice(idx,1); markDirty()"
+                        class="text-text-muted hover:text-destructive-red text-[10px]">&times;</button>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Notes -->
+        <div>
+          <div class="micro-label text-text-muted mb-2">Notes</div>
+          <textarea x-model="notes" @input="markDirty()" rows="3"
+                    placeholder="Anything worth remembering."
+                    class="w-full bg-transparent text-xs font-mono text-ink p-2 border border-border-whisper focus:border-orange-500 focus:outline-none focus:ring-0"></textarea>
+        </div>
+
+        <!-- AI-Ask -->
+        <div class="border-t border-border-subtle pt-4">
+          <div class="micro-label text-text-muted mb-2 flex items-center justify-between">
+            <span>AI-Ask</span>
+            <span class="font-mono text-[10px] text-text-muted normal-case tracking-normal" x-text="aiThread.length + ' turns'"></span>
+          </div>
+
+          <div class="space-y-2 mb-3 max-h-72 scroll-y">
+            <template x-for="(m, i) in aiThread" :key="i">
+              <div class="ai-bubble" :class="m.role === 'user' ? 'user' : ''">
+                <div class="micro-label mb-1"
+                     :class="m.role === 'user' ? 'text-text-muted' : 'text-orange-500'"
+                     x-text="m.role"></div>
+                <div class="text-xs whitespace-pre-wrap break-words" x-text="m.content"></div>
+              </div>
+            </template>
+            <div x-show="askStreaming" x-cloak class="ai-bubble">
+              <div class="micro-label text-orange-500 mb-1">claude</div>
+              <div class="text-xs text-text-muted">thinking&hellip;</div>
+            </div>
+          </div>
+
+          <textarea x-model="askInput"
+                    @keydown.meta.enter.prevent="askAI()"
+                    @keydown.ctrl.enter.prevent="askAI()"
+                    rows="2"
+                    placeholder="Ask anything about this device, the registers, or the driver. Cmd+Enter to send."
+                    class="w-full bg-transparent text-xs font-mono text-ink p-2 border border-border-whisper focus:border-orange-500 focus:outline-none focus:ring-0"></textarea>
+          <div class="flex justify-end mt-2">
+            <button @click="askAI()"
+                    :disabled="!askInput.trim() || askStreaming"
+                    class="bg-orange-500 hover:bg-orange-600 text-paper px-3 py-1 text-[11px] font-mono rounded-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+              <span x-show="!askStreaming">Send</span>
+              <span x-show="askStreaming" x-cloak>&hellip;</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ==============================================
+         DRIVER PANEL (center)
+         ============================================== -->
+    <main class="flex flex-col min-h-0 border-r border-border-whisper md:border-r"
+          :class="(mobileTab !== 'driver' && 'hidden md:flex') || ''">
+      <div class="px-5 py-3 border-b border-border-whisper flex items-center justify-between flex-shrink-0">
+        <div class="flex items-center gap-3 min-w-0">
+          <span class="micro-label text-orange-500 flex-shrink-0">Driver</span>
+          <span class="font-mono text-xs text-ink truncate" x-text="(driverFilename() || '—.lua')"></span>
+        </div>
+        <span class="font-mono text-[10px] text-text-muted flex-shrink-0" x-text="luaSource.length + ' bytes'"></span>
+      </div>
+
+      <div class="flex-1 min-h-0 relative">
+        <textarea x-ref="editor" id="cm-editor" class="hidden"></textarea>
+        <div x-show="aiStreamingToEditor" x-cloak class="ai-streaming-pill">
+          <span class="blink"></span>AI editing
+        </div>
+      </div>
+
+      <div class="border-t border-border-whisper flex flex-shrink-0 flex-wrap">
+        <button @click="runTest()"
+                :disabled="!agentURL || testing || mode === 'manual'"
+                :title="mode === 'manual' ? 'Manual mode — no live device' : (!agentURL ? 'Pair an agent' : 'Run')"
+                class="px-4 py-2 text-xs font-mono text-text-muted hover:text-orange-500 border-r border-border-whisper transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+          <span x-show="!testing">&#9654; Run</span>
+          <span x-show="testing" x-cloak>Running&hellip;</span>
+        </button>
+        <button @click="aiFixSelection()"
+                :disabled="aiBusy"
+                class="px-4 py-2 text-xs font-mono text-text-muted hover:text-orange-500 border-r border-border-whisper transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Replace the selected text with AI's fix">
+          &#10024; AI: Fix selection
+        </button>
+        <button @click="aiGenerate()"
+                :disabled="aiBusy"
+                class="px-4 py-2 text-xs font-mono text-text-muted hover:text-orange-500 border-r border-border-whisper transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Draft the whole driver from probed registers + device info">
+          &#10024; AI: Generate from probed
+        </button>
+        <button @click="resetDriver()"
+                :disabled="!savedSnapshot || luaSource === savedSnapshot"
+                class="px-4 py-2 text-xs font-mono text-text-muted hover:text-destructive-red transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+          &#8634; Reset
+        </button>
+        <div class="ml-auto flex items-center px-4 py-2 text-[10px] font-mono text-text-muted">
+          <span class="w-1.5 h-1.5 rounded-full mr-1.5"
+                :class="dirty ? 'bg-orange-500' : 'bg-confirmed-green'"></span>
+          <span x-text="dirty ? 'unsaved' : 'saved'"></span>
+        </div>
+      </div>
+    </main>
+
+    <!-- ==============================================
+         LIVE PANEL (right)
+         ============================================== -->
+    <aside class="flex flex-col min-h-0"
+           :class="(mobileTab !== 'live' && 'hidden md:flex') || ''">
+      <div class="px-5 py-3 border-b border-border-whisper flex items-center justify-between flex-shrink-0">
+        <span class="micro-label text-orange-500">Live</span>
+        <span class="font-mono text-[11px]"
+              :class="testing ? 'text-orange-500' : (lastTest?.ok ? 'text-confirmed-green' : (lastTest ? 'text-destructive-red' : 'text-text-muted'))"
+              x-text="testing ? 'running…' : (lastTest?.ok ? 'ok' : (lastTest ? 'failed' : 'idle'))"></span>
+      </div>
+
+      <div class="flex-1 scroll-y px-5 py-4 space-y-4">
+
+        <!-- No-runs empty state -->
+        <div x-show="!lastTest && !testing" x-cloak class="text-center py-8">
+          <div class="micro-label text-text-muted mb-2">No runs yet</div>
+          <p class="text-xs text-text-muted leading-relaxed">
+            Click <span class="text-orange-500">&#9654; Run</span> to execute the driver against
+            <span x-text="config.host || 'the device'"></span>.
+          </p>
+        </div>
+
+        <!-- Status block -->
+        <div x-show="lastTest" x-cloak class="border border-border-whisper p-3 grid grid-cols-3 gap-3">
+          <div>
+            <div class="micro-label text-text-muted text-[10px]">init</div>
+            <div class="font-mono text-sm" :class="lastTest?.init_ok ? 'text-confirmed-green' : 'text-destructive-red'"
+                 x-text="(lastTest?.init_ok ? '✓' : '✗') + ' ' + (lastTest?.init_ms || 0) + 'ms'"></div>
+          </div>
+          <div>
+            <div class="micro-label text-text-muted text-[10px]">emissions</div>
+            <div class="font-mono text-sm text-ink" x-text="(lastTest?.emissions?.length || 0)"></div>
+          </div>
+          <div>
+            <div class="micro-label text-text-muted text-[10px]">errors</div>
+            <div class="font-mono text-sm" :class="(lastTest?.errors?.length || 0) ? 'text-destructive-red' : 'text-confirmed-green'"
+                 x-text="(lastTest?.errors?.length || 0)"></div>
+          </div>
+        </div>
+
+        <!-- Errors -->
+        <div x-show="lastTest?.errors?.length" x-cloak class="border border-destructive-red/50 bg-destructive-red/5 p-3">
+          <div class="micro-label text-destructive-red mb-2">Errors</div>
+          <ul class="space-y-1">
+            <template x-for="(e, i) in (lastTest?.errors || [])" :key="i">
+              <li class="font-mono text-[11px] text-destructive-red break-words" x-text="e"></li>
+            </template>
+          </ul>
+        </div>
+
+        <!-- Emissions -->
+        <div x-show="lastTest?.emissions?.length" x-cloak>
+          <div class="micro-label text-text-muted mb-2">Emissions <span class="font-mono normal-case tracking-normal" x-text="'(' + (lastTest?.emissions?.length || 0) + ')'"></span></div>
+          <div class="space-y-2">
+            <template x-for="(em, i) in (lastTest?.emissions || []).slice().reverse()" :key="i">
+              <div class="border border-border-subtle p-2.5">
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="micro-label text-orange-500" x-text="em.channel || em.kind || 'emit'"></span>
+                  <span class="font-mono text-[10px] text-text-muted" x-text="em.ts ? new Date(em.ts).toLocaleTimeString() : ''"></span>
+                </div>
+                <table class="w-full font-mono text-[11px]">
+                  <template x-for="[k, v] in Object.entries(em.data || em.payload || em)" :key="k">
+                    <tr x-show="!['channel','kind','ts','timestamp','data','payload'].includes(k)">
+                      <td class="text-text-muted pr-2 align-top" x-text="k"></td>
+                      <td class="text-ink break-all" x-text="(typeof v === 'object' ? JSON.stringify(v) : String(v))"></td>
+                    </tr>
+                  </template>
+                </table>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Logs -->
+        <div x-show="lastTest?.logs?.length" x-cloak>
+          <button @click="logsOpen = !logsOpen"
+                  class="micro-label text-text-muted hover:text-ink flex items-center gap-2">
+            <span x-text="logsOpen ? '▼' : '▶'"></span>
+            <span>Logs <span class="font-mono normal-case tracking-normal" x-text="'(' + (lastTest?.logs?.length || 0) + ')'"></span></span>
+          </button>
+          <pre x-show="logsOpen" x-cloak class="mt-2 font-mono text-[11px] text-text-muted bg-cream border border-border-whisper p-3 overflow-x-auto whitespace-pre-wrap"
+               x-text="(lastTest?.logs || []).join('\n')"></pre>
+        </div>
+
+        <!-- PR success -->
+        <div x-show="prURL" x-cloak class="border border-confirmed-green p-3">
+          <div class="micro-label text-confirmed-green mb-2">PR opened</div>
+          <a :href="prURL" target="_blank" rel="noopener"
+             class="font-mono text-xs text-ink hover:text-orange-500 break-all" x-text="prURL"></a>
+        </div>
+
+        <!-- Error toast -->
+        <div x-show="error" x-cloak class="border border-destructive-red/50 bg-destructive-red/5 p-3">
+          <div class="micro-label text-destructive-red mb-1">Error</div>
+          <div class="font-mono text-[11px] text-destructive-red break-words" x-text="error"></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- =========================================================
+     PROBE MODAL
+     ========================================================= -->
+<div x-show="probeOpen" x-cloak
+     @keydown.escape.window="probeOpen = false"
+     class="fixed inset-0 bg-paper/95 backdrop-blur-sm flex items-center justify-center z-50 px-6"
+     @click.self="probeOpen = false">
+  <div class="bg-paper border border-border-whisper p-6 max-w-md w-full">
+    <div class="micro-label text-orange-500 mb-4">Probe register</div>
+
+    <div class="space-y-3">
+      <label class="block">
+        <span class="micro-label text-text-muted">Address (decimal or 0x…)</span>
+        <input x-model="probe.addrInput" type="text" placeholder="0x4000"
+               class="mt-1 w-full bg-transparent text-sm font-mono text-ink py-2 px-2 border border-border-whisper focus:border-orange-500 focus:outline-none focus:ring-0" />
+      </label>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="block">
+          <span class="micro-label text-text-muted">Count</span>
+          <input x-model.number="probe.count" type="number" min="1" max="125"
+                 class="mt-1 w-full bg-transparent text-sm font-mono text-ink py-2 px-2 border border-border-whisper focus:border-orange-500 focus:outline-none focus:ring-0" />
+        </label>
+        <label class="block">
+          <span class="micro-label text-text-muted">Decode</span>
+          <select x-model="probe.kind"
+                  class="mt-1 w-full bg-paper text-sm font-mono text-ink py-2 px-2 border border-border-whisper focus:border-orange-500 focus:outline-none focus:ring-0">
+            <option>u16</option><option>i16</option>
+            <option>u32_be</option><option>u32_le</option>
+            <option>i32_be</option><option>i32_le</option>
+            <option>f32_be</option><option>f32_le</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="mt-5 flex justify-end gap-3">
+      <button @click="probeOpen = false" class="text-xs font-mono text-text-muted hover:text-ink">cancel</button>
+      <button @click="runProbe()"
+              :disabled="probing"
+              class="bg-orange-500 hover:bg-orange-600 text-paper px-4 py-2 text-sm font-medium rounded-none transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+        <span x-show="!probing">Probe</span>
+        <span x-show="probing" x-cloak>Probing&hellip;</span>
+      </button>
+    </div>
+
+    <div x-show="probeError" x-cloak class="mt-4 border border-destructive-red/50 bg-destructive-red/5 p-3 font-mono text-[11px] text-destructive-red break-words" x-text="probeError"></div>
+  </div>
+</div>
+
+<!-- =========================================================
+     SCRIPT
+     ========================================================= -->
+<script>
+  const API_BASE = 'https://api.hugin.sourceful-labs.net';
+  const FETCH_TIMEOUT_MS = 60000;
+  const DRAFTS_KEY = 'hugin.drafts';
+  const DRAFT_LIMIT = 20;
+
+  // System prompt — copied verbatim from chat.html so the AI keeps the same
+  // behaviour & sign conventions. The driver-format spec, host API surface,
+  // and "treat agent results as ground truth" rule all live here.
+  const SYSTEM_PROMPT = `You are Hugin's driver-authoring assistant. You help users write Lua drivers for forty-two-watts (an open-source EMS) — drivers that get submitted as PRs to frahlg/forty-two-watts.
+
+You operate inside the Hugin **Workbench**: a 3-pane UI (Device · Driver · Live). The user can scan their LAN, probe registers, edit Lua in a code editor, and run the driver against real hardware. You will be invoked from any of the panels — read the context block carefully to know what's being asked.
+
+## Driver format
+
+A forty-two-watts driver is a single .lua file with:
+
+\`\`\`lua
+DRIVER = {
+  id = "manufacturer_model",
+  name = "Manufacturer Model Name",
+  manufacturer = "Manufacturer",
+  version = "1.0.0",
+  protocols = { "modbus" },
+  capabilities = { "meter", "pv" },
+  tested_models = { "MODEL-X" },
+  verification_status = "experimental",
+  verification_notes = "Drafted via Hugin workbench; not yet verified on live hardware.",
+  description = "One-sentence purpose.",
+  homepage = "https://manufacturer.com/product",
+  connection_defaults = { port = 502, slave_id = 1 },
+}
+
+PROTOCOL = "modbus"
+
+function driver_init(config)
+  host.set_make("Manufacturer")
+  host.set_sn(config.serial or "unknown")
+end
+
+function driver_poll()
+  local power = host.modbus_read(0x4000, 2, "i32_be")
+  if power then host.emit("meter", { power_w = -power }) end
+  return 5000
+end
+
+function driver_command(action, power_w, cmd) end
+function driver_default_mode() end
+function driver_cleanup() end
+\`\`\`
+
+## Sign convention (DON'T BREAK)
+- Positive watts = flowing INTO the site at the grid meter boundary
+- Grid import = +, grid export = −
+- PV generation = always negative
+- Battery: charge = +, discharge = −
+- The driver is the ONLY layer that flips signs
+
+## Host API
+- host.log(level, msg)
+- host.millis()
+- host.set_poll_interval(ms), host.set_make(s), host.set_sn(s)
+- host.emit("meter"|"pv"|"battery"|"ev", { ... })
+- host.emit_metric(name, value)
+- host.modbus_read(addr, count, kind) — kind ∈ u16|i16|u32_be|u32_le|i32_be|i32_le|f32_be|f32_le
+- host.modbus_write(addr, value), host.modbus_write_multi(addr, values)
+- host.mqtt_sub(topic), host.mqtt_pub(topic, payload), host.mqtt_messages()
+- host.http_get(url, headers), host.http_post(url, body, headers)
+- host.json_encode, host.json_decode
+- host.decode_u32_le, host.decode_u32_be, host.decode_i32_le, host.decode_i32_be, host.decode_i16
+
+## How to behave
+- Be terse. Energy-tech users are technical; skip pleasantries.
+- When asked to produce a driver, output **one full \`\`\`lua block** (no diffs, no partial files).
+- When asked to fix a snippet, output ONLY the replacement Lua — no prose, no fences, no explanations. The result will be pasted directly into the editor.
+- Treat probed-register values & test results as **ground truth from real hardware** — they override anything the user previously stated. If a register read fails, change addr or word order. If sign looks off, flip it.
+- Don't invent registers. If you don't know, say so and ask the user to probe / paste the manual.`;
+
+  function workbench() {
+    return {
+      // Auth
+      apiBase: API_BASE,
+      token: null,
+      user: null,
+
+      // Agent pairing
+      agentURL: '',
+      agentToken: '',
+      agentCapabilities: [],
+
+      // Top-level
+      error: null,
+      mobileTab: 'driver',
+
+      // Empty state
+      manualOpen: false,
+      manual: { label: '', specs: '' },
+      lastScan: null,
+      scanning: false,
+      drafts: [],
+
+      // Workbench state
+      workbenchActive: false,
+      mode: 'live', // 'live' | 'manual'
+      draftId: null,
+      device: null,
+      config: { host: '', port: 502, slave_id: 1 },
+      probedRegisters: [],
+      notes: '',
+      luaSource: '',
+      savedSnapshot: '',
+      dirty: false,
+      savedFlash: false,
+      _saveTimer: null,
+
+      // Driver editor
+      cm: null,
+      aiStreamingToEditor: false,
+      aiBusy: false,
+
+      // AI-Ask thread (DEVICE panel)
+      aiThread: [],
+      askInput: '',
+      askStreaming: false,
+
+      // Test
+      testing: false,
+      lastTest: null,
+      logsOpen: false,
+
+      // Probe modal
+      probeOpen: false,
+      probing: false,
+      probeError: null,
+      probe: { addrInput: '0x4000', count: 2, kind: 'i32_be' },
+
+      // PR
+      submitting: false,
+      prURL: null,
+
+      // ===========================================================
+      // INIT
+      // ===========================================================
+      init() {
+        this.token = localStorage.getItem('hugin.gh_token');
+        if (this.token) this.fetchMe();
+        this.refreshAgentPairing();
+        this.loadDrafts();
+
+        // Other-tab pairing or token changes
+        window.addEventListener('storage', (e) => {
+          if (!e.key) return;
+          if (e.key.startsWith('hugin.agent_')) this.refreshAgentPairing();
+          if (e.key === 'hugin.gh_token') {
+            this.token = localStorage.getItem('hugin.gh_token');
+            if (this.token) this.fetchMe();
+          }
+          if (e.key === DRAFTS_KEY) this.loadDrafts();
+        });
+
+        // Allow ?draft=<id> deep-link
+        const qs = new URLSearchParams(window.location.search);
+        const wantedDraft = qs.get('draft');
+        if (wantedDraft) {
+          this.$nextTick(() => this.restoreDraft(wantedDraft));
+        }
+      },
+
+      refreshAgentPairing() {
+        this.agentURL = (localStorage.getItem('hugin.agent_url') || '').trim();
+        this.agentToken = (localStorage.getItem('hugin.agent_token') || '').trim();
+        try {
+          const raw = localStorage.getItem('hugin.agent_capabilities');
+          this.agentCapabilities = raw ? JSON.parse(raw) : [];
+          if (!Array.isArray(this.agentCapabilities)) this.agentCapabilities = [];
+        } catch (_) { this.agentCapabilities = []; }
+      },
+
+      async fetchMe() {
+        try {
+          const r = await this.fetchWithTimeout(API_BASE + '/v1/me', {
+            headers: { 'Authorization': 'Bearer ' + this.token },
+          });
+          if (r.status === 401) { this.signOut(); return; }
+          if (!r.ok) throw new Error('me ' + r.status);
+          const me = await r.json();
+          this.user = me.login || me.user || 'unknown';
+        } catch (_) { this.user = '?'; }
+      },
+
+      signOut() {
+        localStorage.removeItem('hugin.gh_token');
+        this.token = null;
+        this.user = null;
+        // Don't clobber drafts — they're not tied to identity.
+      },
+
+      // ===========================================================
+      // FETCH HELPERS
+      // ===========================================================
+      async fetchWithTimeout(url, opts = {}, ms = FETCH_TIMEOUT_MS) {
+        const ctl = new AbortController();
+        const t = setTimeout(() => ctl.abort(), ms);
+        try {
+          return await fetch(url, { ...opts, signal: ctl.signal });
+        } finally {
+          clearTimeout(t);
+        }
+      },
+
+      async agentFetch(path, body) {
+        if (!this.agentURL) throw new Error('No agent paired. Open /settings.html.');
+        const resp = await this.fetchWithTimeout(this.agentURL.replace(/\/$/, '') + path, {
+          method: 'POST',
+          mode: 'cors',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(this.agentToken ? { 'Authorization': 'Bearer ' + this.agentToken } : {}),
+          },
+          body: JSON.stringify(body || {}),
+        });
+        if (resp.status === 401) {
+          throw new Error('401 — agent token expired. Re-pair in /settings.html.');
+        }
+        const text = await resp.text();
+        let parsed = null;
+        try { parsed = text ? JSON.parse(text) : null; } catch (_) {}
+        if (!resp.ok) {
+          const msg = (parsed && (parsed.error || parsed.message)) || text || ('HTTP ' + resp.status);
+          throw new Error(msg.toString().slice(0, 240));
+        }
+        return parsed || {};
+      },
+
+      // ===========================================================
+      // EMPTY STATE — scan / manual / drafts
+      // ===========================================================
+      async scanLAN() {
+        if (!this.agentURL || this.scanning) return;
+        this.error = null;
+        this.scanning = true;
+        try {
+          this.lastScan = await this.agentFetch('/v1/scan', {});
+        } catch (e) {
+          this.error = 'Scan failed: ' + e.message;
+        } finally {
+          this.scanning = false;
+        }
+      },
+
+      openManualMode() { this.manualOpen = true; this.lastScan = null; },
+
+      enterManual() {
+        const label = (this.manual.label || '').trim() || 'Manual draft';
+        const specs = this.manual.specs.trim();
+        const draft = this.newDraft({
+          label,
+          mode: 'manual',
+          device: { manufacturer: this.guessManufacturer(label), model: label },
+          notes: 'Pasted specs:\n\n' + specs,
+        });
+        this.activate(draft);
+        this.manualOpen = false;
+        this.manual = { label: '', specs: '' };
+      },
+
+      enterFromScan(d) {
+        const make = d.modbus?.fc43_make || d.vendor_oui || 'Unknown';
+        const model = d.modbus?.fc43_model || '';
+        const draft = this.newDraft({
+          mode: 'live',
+          device: {
+            ip: d.ip,
+            mac: d.mac,
+            manufacturer: make,
+            model,
+            ports: d.open_ports || [],
+            modbusFingerprint: d.modbus || null,
+          },
+          config: {
+            host: d.ip || '',
+            port: (d.open_ports || []).includes(502) ? 502 : ((d.open_ports || [])[0] || 502),
+            slave_id: 1,
+          },
+        });
+        this.activate(draft);
+      },
+
+      guessManufacturer(label) {
+        const first = (label || '').trim().split(/\s+/)[0] || '';
+        return first;
+      },
+
+      // ===========================================================
+      // DRAFTS
+      // ===========================================================
+      loadDrafts() {
+        try {
+          const raw = localStorage.getItem(DRAFTS_KEY);
+          this.drafts = raw ? JSON.parse(raw) : [];
+          if (!Array.isArray(this.drafts)) this.drafts = [];
+        } catch (_) { this.drafts = []; }
+        this.drafts.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+      },
+
+      saveDrafts() {
+        try {
+          // LRU cap
+          this.drafts.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+          if (this.drafts.length > DRAFT_LIMIT) this.drafts = this.drafts.slice(0, DRAFT_LIMIT);
+          localStorage.setItem(DRAFTS_KEY, JSON.stringify(this.drafts));
+        } catch (e) {
+          console.warn('drafts save failed', e);
+        }
+      },
+
+      newDraft(seed) {
+        const now = new Date().toISOString();
+        const id = 'draft_' + Math.random().toString(36).slice(2, 10);
+        const d = {
+          id,
+          label: seed.label || '',
+          mode: seed.mode || 'live',
+          createdAt: now,
+          updatedAt: now,
+          device: seed.device || null,
+          config: seed.config || { host: '', port: 502, slave_id: 1 },
+          probedRegisters: [],
+          notes: seed.notes || '',
+          lua: seed.lua || this.starterLua(seed.device),
+          aiThread: [],
+          lastTestRun: null,
+          prURL: null,
+        };
+        this.drafts.unshift(d);
+        this.saveDrafts();
+        return d;
+      },
+
+      restoreDraft(id) {
+        const d = this.drafts.find(x => x.id === id);
+        if (!d) return;
+        this.activate(d);
+      },
+
+      deleteDraft(id) {
+        this.drafts = this.drafts.filter(x => x.id !== id);
+        this.saveDrafts();
+      },
+
+      activate(d) {
+        this.draftId = d.id;
+        this.mode = d.mode || 'live';
+        this.device = d.device || null;
+        this.config = Object.assign({ host: '', port: 502, slave_id: 1 }, d.config || {});
+        this.probedRegisters = Array.isArray(d.probedRegisters) ? d.probedRegisters.slice() : [];
+        this.notes = d.notes || '';
+        this.luaSource = d.lua || this.starterLua(d.device);
+        this.savedSnapshot = this.luaSource;
+        this.aiThread = Array.isArray(d.aiThread) ? d.aiThread.slice() : [];
+        this.lastTest = d.lastTestRun || null;
+        this.prURL = d.prURL || null;
+        this.dirty = false;
+        this.error = null;
+        this.workbenchActive = true;
+        this.$nextTick(() => this.mountEditor());
+      },
+
+      exitWorkbench() {
+        this.persist(); // flush
+        this.teardownEditor();
+        this.workbenchActive = false;
+        this.mobileTab = 'driver';
+        this.loadDrafts();
+      },
+
+      persist() {
+        if (!this.draftId) return;
+        const d = this.drafts.find(x => x.id === this.draftId);
+        if (!d) return;
+        d.updatedAt = new Date().toISOString();
+        d.device = this.device;
+        d.config = { ...this.config };
+        d.probedRegisters = this.probedRegisters.slice();
+        d.notes = this.notes;
+        d.lua = this.luaSource;
+        d.aiThread = this.aiThread.slice(-40); // cap thread
+        d.lastTestRun = this.lastTest;
+        d.prURL = this.prURL;
+        d.label = d.label || ((this.device?.manufacturer || '') + ' ' + (this.device?.model || '')).trim();
+        this.savedSnapshot = this.luaSource;
+        this.dirty = false;
+        this.savedFlash = true;
+        clearTimeout(this._flashTimer);
+        this._flashTimer = setTimeout(() => { this.savedFlash = false; }, 1200);
+        this.saveDrafts();
+      },
+
+      markDirty() {
+        this.dirty = true;
+        clearTimeout(this._saveTimer);
+        this._saveTimer = setTimeout(() => this.persist(), 500);
+      },
+
+      breadcrumbLabel() {
+        const m = this.device?.manufacturer || '';
+        const mo = this.device?.model || '';
+        return [m, mo].filter(Boolean).join(' ') || 'Untitled';
+      },
+
+      relTime(iso) {
+        if (!iso) return '';
+        const ms = Date.now() - new Date(iso).getTime();
+        const s = Math.floor(ms / 1000);
+        if (s < 60) return s + 's ago';
+        if (s < 3600) return Math.floor(s/60) + 'm ago';
+        if (s < 86400) return Math.floor(s/3600) + 'h ago';
+        return Math.floor(s/86400) + 'd ago';
+      },
+
+      // ===========================================================
+      // EDITOR (CodeMirror 5)
+      // ===========================================================
+      mountEditor() {
+        const ta = this.$refs.editor;
+        if (!ta) return;
+        if (this.cm) {
+          this.cm.setValue(this.luaSource);
+          return;
+        }
+        if (typeof CodeMirror === 'undefined') {
+          // CDN not yet hydrated — retry
+          setTimeout(() => this.mountEditor(), 80);
+          return;
+        }
+        ta.value = this.luaSource;
+        ta.classList.remove('hidden');
+        this.cm = CodeMirror.fromTextArea(ta, {
+          mode: 'lua',
+          theme: 'material-darker',
+          lineNumbers: true,
+          matchBrackets: true,
+          styleActiveLine: true,
+          tabSize: 2,
+          indentUnit: 2,
+          lineWrapping: false,
+          extraKeys: {
+            'Cmd-S': () => this.persist(),
+            'Ctrl-S': () => this.persist(),
+            'Cmd-Enter': () => this.runTest(),
+            'Ctrl-Enter': () => this.runTest(),
+          },
+        });
+        this.cm.on('change', () => {
+          if (this.aiStreamingToEditor) return; // we're driving programmatically
+          this.luaSource = this.cm.getValue();
+          this.markDirty();
+        });
+      },
+
+      teardownEditor() {
+        if (this.cm) {
+          this.luaSource = this.cm.getValue();
+          this.cm.toTextArea();
+          this.cm = null;
+        }
+      },
+
+      driverFilename() {
+        const m = /\bid\s*=\s*"([^"]+)"/.exec(this.luaSource);
+        return m ? m[1] + '.lua' : '';
+      },
+
+      starterLua(device) {
+        const make = (device?.manufacturer || 'Manufacturer').replace(/"/g, '');
+        const model = (device?.model || 'Model').replace(/"/g, '');
+        const id = (make + '_' + model).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'unknown_device';
+        return `-- Hugin workbench draft — fill this in with AI's help.
+DRIVER = {
+  id = "${id}",
+  name = "${make} ${model}",
+  manufacturer = "${make}",
+  version = "0.1.0",
+  protocols = { "modbus" },
+  capabilities = { "meter" },
+  tested_models = {},
+  verification_status = "experimental",
+  verification_notes = "Drafted via Hugin workbench; not yet verified on live hardware.",
+  description = "TODO: one-sentence purpose.",
+  connection_defaults = { port = 502, slave_id = 1 },
+}
+
+PROTOCOL = "modbus"
+
+function driver_init(config)
+  host.set_make("${make}")
+  host.set_sn(config.serial or "unknown")
+end
+
+function driver_poll()
+  -- TODO: read registers, host.emit("meter", {...})
+  return 5000
+end
+
+function driver_command(action, power_w, cmd) end
+function driver_default_mode() end
+function driver_cleanup() end
+`;
+      },
+
+      resetDriver() {
+        if (!this.cm || !this.savedSnapshot) return;
+        this.cm.setValue(this.savedSnapshot);
+        this.luaSource = this.savedSnapshot;
+        this.dirty = false;
+      },
+
+      canSubmit() {
+        if (!this.luaSource) return false;
+        if (this.submitting) return false;
+        const id = /\bid\s*=\s*"([^"]+)"/.exec(this.luaSource);
+        const name = /\bname\s*=\s*"([^"]+)"/.exec(this.luaSource);
+        const mfg = /\bmanufacturer\s*=\s*"([^"]+)"/.exec(this.luaSource);
+        return !!(id && name && mfg && /DRIVER\s*=\s*\{/.test(this.luaSource));
+      },
+
+      // ===========================================================
+      // PROBE
+      // ===========================================================
+      openProbe() {
+        if (!this.agentURL) { this.error = 'Pair an agent in /settings.html.'; return; }
+        if (this.mode === 'manual') return;
+        this.probeError = null;
+        this.probeOpen = true;
+      },
+
+      async runProbe() {
+        const raw = (this.probe.addrInput || '').trim();
+        let addr;
+        if (/^0x/i.test(raw)) addr = parseInt(raw, 16);
+        else addr = parseInt(raw, 10);
+        if (!Number.isFinite(addr)) { this.probeError = 'Address must be a number (decimal or 0x…).'; return; }
+        if (!this.config.host) { this.probeError = 'Set a host on the connection form first.'; return; }
+
+        this.probing = true;
+        this.probeError = null;
+        try {
+          const result = await this.agentFetch('/v1/probe', {
+            ip: this.config.host,
+            protocol: 'modbus',
+            modbus: {
+              port: this.config.port || 502,
+              slave_id: this.config.slave_id || 1,
+              registers: [{ addr, count: this.probe.count || 2, kind: this.probe.kind }],
+            },
+          });
+          const r = (result.results && result.results[0]) || {};
+          const errs = result.errors || [];
+          if (errs.length && r.value === undefined) {
+            this.probeError = errs.join('; ');
+          } else {
+            this.probedRegisters.unshift({
+              addr,
+              count: this.probe.count || 2,
+              kind: this.probe.kind,
+              value: r.value,
+              raw_hex: r.raw_hex || r.raw || '',
+              ts: new Date().toISOString(),
+            });
+            this.markDirty();
+            this.probeOpen = false;
+          }
+        } catch (e) {
+          this.probeError = e.message;
+        } finally {
+          this.probing = false;
+        }
+      },
+
+      // ===========================================================
+      // RUN-LUA TEST
+      // ===========================================================
+      async runTest() {
+        if (this.mode === 'manual') {
+          this.error = 'Manual mode — no live device to test against. Edit, then submit as PR once it looks right.';
+          return;
+        }
+        if (!this.agentURL || this.testing) return;
+        if (!/DRIVER\s*=\s*\{/.test(this.luaSource)) {
+          this.error = 'No DRIVER block found in the editor.';
+          return;
+        }
+        if (!/\bid\s*=\s*"/.test(this.luaSource)) {
+          this.error = 'DRIVER.id is required before running.';
+          return;
+        }
+        if (!this.config.host) {
+          this.error = 'Connection host is required.';
+          this.mobileTab = 'device';
+          return;
+        }
+        this.error = null;
+        this.testing = true;
+        try {
+          const t0 = performance.now();
+          const result = await this.agentFetch('/v1/run-lua', {
+            lua_source: this.luaSource,
+            config: {
+              host: this.config.host,
+              port: this.config.port || 502,
+              slave_id: this.config.slave_id || 1,
+            },
+            actions: ['init', 'poll'],
+            duration_ms: 30000,
+          });
+          const dt = Math.round(performance.now() - t0);
+          this.lastTest = {
+            ok: !!result.ok,
+            init_ok: result.ok !== false,
+            init_ms: dt,
+            emissions: Array.isArray(result.emissions) ? result.emissions : [],
+            errors: Array.isArray(result.errors) ? result.errors : [],
+            logs: Array.isArray(result.logs) ? result.logs : [],
+            ts: new Date().toISOString(),
+          };
+          this.markDirty();
+        } catch (e) {
+          this.lastTest = {
+            ok: false,
+            init_ok: false,
+            init_ms: 0,
+            emissions: [],
+            errors: ['agent call failed: ' + e.message],
+            logs: [],
+            ts: new Date().toISOString(),
+          };
+          this.error = 'Test failed: ' + e.message;
+        } finally {
+          this.testing = false;
+          this.markDirty();
+          this.mobileTab = 'live';
+        }
+      },
+
+      // ===========================================================
+      // AI: shared helpers
+      // ===========================================================
+      contextBlock() {
+        // The "what's on the workbench right now" snapshot every AI call sees.
+        const lines = [];
+        lines.push('## Workbench context');
+        if (this.device) {
+          lines.push('- device: ' + JSON.stringify({
+            ip: this.device.ip,
+            manufacturer: this.device.manufacturer,
+            model: this.device.model,
+            ports: this.device.ports,
+            modbus_fingerprint: this.device.modbusFingerprint || null,
+          }));
+        }
+        lines.push('- mode: ' + this.mode);
+        lines.push('- connection: ' + JSON.stringify(this.config));
+        if (this.probedRegisters.length) {
+          lines.push('- probed_registers:');
+          for (const r of this.probedRegisters.slice(0, 30)) {
+            lines.push(`    addr=0x${(r.addr || 0).toString(16)} count=${r.count} kind=${r.kind} value=${r.value} raw=${r.raw_hex || ''}`);
+          }
+        }
+        if (this.notes && this.notes.trim()) {
+          lines.push('- notes: ' + this.notes.replace(/\n/g, ' ').slice(0, 800));
+        }
+        if (this.lastTest) {
+          lines.push('- last_test_run: ok=' + this.lastTest.ok
+            + ' emissions=' + (this.lastTest.emissions?.length || 0)
+            + ' errors=' + (this.lastTest.errors?.length || 0));
+          if (this.lastTest.errors?.length) {
+            lines.push('  errors: ' + this.lastTest.errors.slice(0, 3).join(' | ').slice(0, 400));
+          }
+        }
+        return lines.join('\n');
+      },
+
+      async aiCall({ system, messages, onText, onDone }) {
+        if (!this.token) throw new Error('Not signed in.');
+        const resp = await this.fetchWithTimeout(API_BASE + '/v1/ai/messages', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + this.token,
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream',
+          },
+          body: JSON.stringify({
+            model: 'claude-opus-4-7',
+            max_tokens: 4096,
+            stream: true,
+            system: system || SYSTEM_PROMPT,
+            messages,
+          }),
+        });
+        if (resp.status === 401) { this.signOut(); throw new Error('Session expired. Sign in again.'); }
+        if (!resp.ok) {
+          const t = await resp.text().catch(() => '');
+          throw new Error('AI ' + resp.status + ': ' + t.slice(0, 200));
+        }
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        let full = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop();
+          for (const line of lines) {
+            if (!line.startsWith('data:')) continue;
+            const payload = line.slice(5).trim();
+            if (!payload || payload === '[DONE]') continue;
+            try {
+              const ev = JSON.parse(payload);
+              if (ev.type === 'content_block_delta' && ev.delta?.text) {
+                full += ev.delta.text;
+                if (onText) onText(ev.delta.text, full);
+              } else if (ev.type === 'error') {
+                throw new Error('AI error: ' + JSON.stringify(ev.error || ev));
+              }
+            } catch (e) {
+              if (e instanceof SyntaxError) continue;
+              throw e;
+            }
+          }
+        }
+        if (onDone) onDone(full);
+        return full;
+      },
+
+      // ===========================================================
+      // AI-Ask (DEVICE panel mini-chat)
+      // ===========================================================
+      async askAI() {
+        const text = this.askInput.trim();
+        if (!text || this.askStreaming) return;
+        this.askStreaming = true;
+        this.error = null;
+        const userTurn = { role: 'user', content: text };
+        this.aiThread.push(userTurn);
+        this.askInput = '';
+
+        // Build messages: prior thread + a fresh user turn that prepends current context + current Lua.
+        const prior = this.aiThread.slice(0, -1).map(m => ({ role: m.role, content: m.content }));
+        const lastUser = this.contextBlock()
+          + '\n\n## Current driver (editor contents)\n```lua\n'
+          + (this.luaSource || '').slice(0, 12000)
+          + '\n```\n\n## Question\n' + text;
+
+        const assistantTurn = { role: 'assistant', content: '' };
+        this.aiThread.push(assistantTurn);
+        const idx = this.aiThread.length - 1;
+        try {
+          await this.aiCall({
+            messages: [...prior, { role: 'user', content: lastUser }],
+            onText: (_chunk, full) => { this.aiThread[idx].content = full; },
+          });
+        } catch (e) {
+          this.error = 'AI ask failed: ' + e.message;
+          if (!this.aiThread[idx].content) this.aiThread.splice(idx, 1);
+        } finally {
+          this.askStreaming = false;
+          this.markDirty();
+        }
+      },
+
+      // ===========================================================
+      // AI: Fix selection — replace selected text with model's output.
+      // We instruct the model to return ONLY Lua, no fences.
+      // ===========================================================
+      async aiFixSelection() {
+        if (!this.cm || this.aiBusy) return;
+        const sel = this.cm.getSelection();
+        if (!sel.trim()) {
+          this.error = 'Select some Lua to fix first.';
+          return;
+        }
+        this.error = null;
+        this.aiBusy = true;
+        this.aiStreamingToEditor = true;
+
+        const before = this.cm.getRange({ line: 0, ch: 0 }, this.cm.getCursor('from'));
+        const after  = this.cm.getRange(this.cm.getCursor('to'), { line: this.cm.lineCount(), ch: 0 });
+        const userMsg = this.contextBlock()
+          + '\n\n## Surrounding code (do not repeat — only fix the selected snippet)\n```lua\n'
+          + (before.slice(-2000) + '\n/* >>> SELECTED <<< */\n' + after.slice(0, 2000))
+          + '\n```\n\n## Selected snippet to fix\n```lua\n' + sel + '\n```\n\n'
+          + 'Output ONLY the replacement Lua for the selected snippet. No fences. No prose. No DRIVER table unless it was selected. Match the selection\'s indent and style.';
+
+        // Replace selection live
+        const from = this.cm.getCursor('from');
+        const to = this.cm.getCursor('to');
+        this.cm.replaceRange('', from, to);
+        let cursor = { line: from.line, ch: from.ch };
+        try {
+          await this.aiCall({
+            messages: [{ role: 'user', content: userMsg }],
+            onText: (chunk) => {
+              const out = this.cleanLuaChunk(chunk);
+              if (!out) return;
+              const cur = this.cm.getCursor('to');
+              this.cm.replaceRange(out, cur);
+              cursor = this.cm.getCursor('to');
+            },
+            onDone: () => {
+              this.luaSource = this.cm.getValue();
+              this.markDirty();
+            },
+          });
+        } catch (e) {
+          this.error = 'AI fix failed: ' + e.message;
+          // Restore the original selection (best-effort)
+          this.cm.replaceRange(sel, from, this.cm.getCursor('to'));
+          this.luaSource = this.cm.getValue();
+        } finally {
+          this.aiBusy = false;
+          this.aiStreamingToEditor = false;
+        }
+      },
+
+      // ===========================================================
+      // AI: Generate from probed — full-file draft using device + probes.
+      // ===========================================================
+      async aiGenerate() {
+        if (!this.cm || this.aiBusy) return;
+        this.error = null;
+        this.aiBusy = true;
+        this.aiStreamingToEditor = true;
+
+        const userMsg = this.contextBlock()
+          + '\n\n## Task\nDraft a complete forty-two-watts Lua driver for this device. '
+          + 'Use the probed registers as ground truth. Mark any guesses with TODO comments. '
+          + 'Output a full ```lua block — full file, including DRIVER table, PROTOCOL, and all lifecycle functions.';
+
+        try {
+          const full = await this.aiCall({
+            messages: [{ role: 'user', content: userMsg }],
+            // Don't stream into the editor token-by-token — we wait for the
+            // ```lua block to fully arrive and write it as one replace, since
+            // partial fenced blocks would leave broken syntax in the editor.
+          });
+          const m = /```(?:lua)?\n([\s\S]*?)\n```/.exec(full);
+          const newLua = m ? m[1] : full.trim();
+          if (!/DRIVER\s*=\s*\{/.test(newLua)) {
+            this.error = 'AI did not return a DRIVER table.';
+            return;
+          }
+          this.cm.setValue(newLua);
+          this.luaSource = newLua;
+          this.markDirty();
+        } catch (e) {
+          this.error = 'AI generate failed: ' + e.message;
+        } finally {
+          this.aiBusy = false;
+          this.aiStreamingToEditor = false;
+        }
+      },
+
+      // Strip leading code fences if the model includes them despite the
+      // instruction. Idempotent and safe across chunk boundaries.
+      cleanLuaChunk(chunk) {
+        return chunk.replace(/```(?:lua)?\n?/g, '').replace(/```/g, '');
+      },
+
+      // ===========================================================
+      // PR submit
+      // ===========================================================
+      async submitPR() {
+        if (!this.canSubmit() || this.submitting) return;
+        const id = (/\bid\s*=\s*"([^"]+)"/.exec(this.luaSource) || [])[1];
+        this.submitting = true;
+        this.error = null;
+        try {
+          const resp = await this.fetchWithTimeout(API_BASE + '/v1/pr', {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + this.token,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              driver_id: id,
+              lua_source: this.luaSource,
+              title: 'drivers: add ' + id,
+              body: 'Drafted via Hugin workbench (https://hugin.sourceful-labs.net/workbench.html).',
+            }),
+          });
+          if (resp.status === 401) { this.signOut(); throw new Error('Session expired. Sign in again.'); }
+          const body = await resp.json().catch(() => ({}));
+          if (!resp.ok) throw new Error(body.error || ('PR ' + resp.status));
+          this.prURL = body.pr_url || null;
+          this.markDirty();
+          this.mobileTab = 'live';
+        } catch (e) {
+          this.error = 'Submit failed: ' + e.message;
+        } finally {
+          this.submitting = false;
+        }
+      },
+    };
+  }
+</script>
+
+</body>
+</html>

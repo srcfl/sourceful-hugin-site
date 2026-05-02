@@ -67,7 +67,7 @@
     if (!token) {
       titleEl.textContent = 'Sign-in failed.';
       msgEl.classList.add('err');
-      msgEl.innerHTML = 'No token returned from GitHub. <a href="/chat.html">Try again</a>.';
+      msgEl.innerHTML = 'No token returned from GitHub. <a href="/workbench.html">Try again</a>.';
       return;
     }
 
@@ -83,7 +83,7 @@
     // Wipe the token from the URL before bouncing on, so it doesn't end up
     // in the next page's referer.
     history.replaceState(null, '', '/auth-success.html');
-    window.location.replace('/chat.html');
+    window.location.replace('/workbench.html');
   })();
 </script>
 

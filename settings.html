@@ -80,7 +80,7 @@
   </a>
   <div class="flex items-center gap-6">
     <a href="/catalog.html" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">Catalog</a>
-    <a href="/chat.html" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">Author</a>
+    <a href="/workbench.html" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">Workbench</a>
     <a href="/settings.html" class="hidden sm:inline text-sm font-medium text-orange-500 transition-colors no-underline">Settings</a>
   </div>
 </nav>
@@ -202,7 +202,7 @@
         <span class="micro-label text-confirmed-green">Paired</span>
         <span class="ml-2 font-mono text-xs text-text-muted">stored locally in this browser</span>
       </div>
-      <a href="/chat.html" class="text-sm font-medium text-orange-500 hover:text-ink no-underline">Continue to chat →</a>
+      <a href="/workbench.html" class="text-sm font-medium text-orange-500 hover:text-ink no-underline">Open the workbench →</a>
     </div>
   </div>
 </section>
@@ -293,7 +293,7 @@
 </footer>
 
 <script>
-  // localStorage contract — these exact keys are read by chat.html and
+  // localStorage contract — these exact keys are read by workbench.html and
   // any sibling page that wants to talk to the local agent.
   const LS_URL  = 'hugin.agent_url';
   const LS_TOK  = 'hugin.agent_token';
@@ -308,6 +308,10 @@
       error: null,
       savedFlash: false,
       paired: { url: null, token: null, capabilities: [] },
+      // When true, a successful Test should auto-Save and redirect. Set only
+      // by the agent-handoff fragment path so manual pasting still requires
+      // explicit clicks.
+      autoPair: false,
 
       init() {
         // Hydrate from localStorage so the form pre-fills if already paired.
@@ -340,9 +344,11 @@
           // Scrub the URL — same trick auth-success.html uses.
           history.replaceState(null, '', window.location.pathname);
           if (urlFromAgent && tokFromAgent) {
-            // Run a Test so the user sees "Connection successful" without
-            // having to click anything. Save still requires explicit click
-            // — keeps the user in control if they're suspicious.
+            // The agent-handoff fragment is a trusted, one-click flow: the
+            // local agent itself opened this page. Auto-Test, then on
+            // success auto-Save and bounce to the workbench. The manual
+            // paste path (no fragment) keeps the explicit two-click flow.
+            this.autoPair = true;
             this.$nextTick(() => this.testConnection());
           }
         }
@@ -358,6 +364,10 @@
         this.testResult = { ok: false, info: null };
         this.error = null;
         this.savedFlash = false;
+        // If the user starts editing fields, cancel any pending auto-pair
+        // — they're taking control, don't redirect on them.
+        this.autoPair = false;
+        this._postSaveRedirect = false;
       },
 
       async fetchWithTimeout(url, opts = {}, ms = 5000) {
@@ -391,6 +401,15 @@
           }
           const info = await r.json();
           this.testResult = { ok: true, info };
+
+          // One-click pairing: when arrived via the agent fragment, chain
+          // straight into Save once Test passes — only if we have a token
+          // (the manual-paste path won't hit this because autoPair is false).
+          if (this.autoPair && (this.form.token || '').trim()) {
+            this.autoPair = false;        // single-shot; don't loop on edits
+            this._postSaveRedirect = true; // savePairing() will bounce on success
+            await this.savePairing();
+          }
         } catch (e) {
           if (e.name === 'AbortError') {
             this.error = 'Timed out after 5s. Is the agent running at ' + base + '?';
@@ -438,6 +457,14 @@
 
           this.paired = { url: base, token, capabilities: caps };
           this.savedFlash = true;
+
+          // If Save was kicked off by the auto-pair flow, send the user
+          // straight to the workbench. The manual-paste flow leaves the
+          // user on this page so they can read confirmation.
+          if (this._postSaveRedirect) {
+            this._postSaveRedirect = false;
+            setTimeout(() => { window.location.replace('/workbench.html'); }, 800);
+          }
         } catch (e) {
           if (e.name === 'AbortError') {
             this.error = 'Timed out verifying token. Agent unreachable.';
