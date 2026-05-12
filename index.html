@@ -3,8 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hugin — open driver library for energy integrations</title>
-<meta name="description" content="The AI-first workbench for writing Lua drivers for forty-two-watts. Point AI at an unknown inverter, get a working driver in minutes.">
+<title>Hugin — the AI workbench for open energy device drivers</title>
+<meta name="description" content="Point AI at an unknown inverter, battery, or meter. Get a working Lua driver in minutes. Open library, your name on the commit, runs in any energy management system.">
+<meta property="og:title" content="Hugin — AI workbench for open energy device drivers">
+<meta property="og:description" content="Write a Modbus driver in 5 minutes with AI. Open library. Your name on the commit. No lock-in.">
+<meta property="og:type" content="website">
 
 <link href="https://api.fontshare.com/css?f[]=satoshi@300,400,500,700,900&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -12,7 +15,6 @@
 
 <style>
   :root {
-    /* Dark-only palette — paper/cream/ink flip; signal orange is unchanged */
     --color-ground-paper: #0A0A0A;
     --color-ground-cream: #161616;
     --color-ground-ink: #F5F2E1;
@@ -28,6 +30,17 @@
   body { background: var(--color-ground-paper); }
   .font-mono { font-family: "JetBrains Mono", monospace; }
   .micro-label { font-family: "JetBrains Mono", monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+  /* Click-to-copy on the install cards */
+  .copy-btn { position: relative; cursor: pointer; }
+  .copy-btn::after {
+    content: 'copy';
+    position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%);
+    font-family: "JetBrains Mono", monospace; font-size: 10px;
+    color: var(--color-text-muted); letter-spacing: 0.12em;
+    opacity: 0; transition: opacity 0.15s;
+  }
+  .copy-btn:hover::after { opacity: 1; }
+  .copy-btn.copied::after { content: 'copied ✓'; opacity: 1; color: var(--color-confirmed-green); }
 </style>
 
 <script>
@@ -67,110 +80,243 @@
     Hugin
   </a>
   <div class="flex items-center gap-6">
-    <a href="#download" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">Download</a>
+    <a href="#install" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">Install</a>
     <a id="catalog-link" href="/catalog.html" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">Catalog</a>
     <a href="/workbench.html" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">Workbench</a>
-    <a href="https://github.com/frahlg/forty-two-watts" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">forty-two-watts</a>
+    <a href="https://github.com/srcfl/hugin-drivers" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">GitHub</a>
     <a href="/workbench.html" class="inline-block bg-ink text-paper px-4 py-2 text-sm font-medium rounded-none hover:bg-orange-500 transition-colors no-underline">Open workbench</a>
   </div>
 </nav>
 
-<header class="max-w-7xl mx-auto w-full px-6 py-24 md:py-32">
+<header class="max-w-7xl mx-auto w-full px-6 py-20 md:py-28">
   <div class="inline-flex items-center gap-2 mb-6">
     <span class="w-1.5 h-1.5 bg-orange-500 inline-block"></span>
-    <span class="micro-label text-orange-600">v0.2.1 · alpha</span>
+    <span class="micro-label text-orange-600">v0.2 · public beta</span>
   </div>
-  <h1 class="text-5xl md:text-7xl font-black tracking-tight leading-[1.05] max-w-5xl">
-    World's largest open driver library<br>for energy integrations.
+  <h1 class="text-5xl md:text-7xl font-black tracking-tight leading-[1.04] max-w-5xl">
+    The AI workbench<br>for open energy drivers.
   </h1>
   <p class="mt-8 text-lg md:text-xl text-text-muted max-w-prose leading-relaxed">
-    Point AI at an unknown inverter. Get a working Lua driver in minutes.
-    Drivers land in <a href="https://github.com/frahlg/forty-two-watts" class="text-ink underline decoration-orange-500 underline-offset-4 hover:text-orange-600">forty-two-watts</a>
-    — the open-source EMS anyone can self-host.
+    Point it at an unknown inverter, battery, or meter. AI drafts the Lua,
+    you test it live against the device, the driver lands as a PR with
+    <em>your</em> name on the commit. No lock-in, no telemetry, no cloud
+    middleman between you and the hardware.
   </p>
   <div class="mt-12 flex flex-wrap gap-4">
     <a href="/workbench.html" class="inline-block bg-ink text-paper px-6 py-4 text-base font-medium rounded-none hover:bg-orange-500 transition-colors no-underline">
-      Open the workbench
+      Open the workbench →
     </a>
     <a id="browse-catalog" href="/catalog.html" class="inline-block bg-transparent text-ink px-6 py-4 text-base font-medium rounded-none border border-ink hover:bg-cream transition-colors no-underline">
-      Browse <span id="catalog-count" class="font-mono tabular-nums">20</span> drivers
+      Browse <span id="catalog-count" class="font-mono tabular-nums">…</span> drivers
     </a>
-    <a href="#download" class="inline-block bg-transparent text-text-muted px-6 py-4 text-base font-medium rounded-none border border-border-whisper hover:text-ink hover:border-ink transition-colors no-underline">
-      Download desktop
+    <a href="#install" class="inline-block bg-transparent text-text-muted px-6 py-4 text-base font-medium rounded-none border border-border-whisper hover:text-ink hover:border-ink transition-colors no-underline">
+      Install the agent
     </a>
   </div>
 </header>
 
+<!-- =========================================================
+     WHY HUGIN — three cards
+     ========================================================= -->
 <section class="bg-cream border-t border-border-whisper">
   <div class="max-w-7xl mx-auto w-full px-6 py-24">
     <div class="micro-label text-text-muted mb-3">Why Hugin</div>
-    <h2 class="text-3xl md:text-5xl font-black tracking-tight mb-16">Three reasons it works.</h2>
+    <h2 class="text-3xl md:text-5xl font-black tracking-tight mb-16">Three things click.</h2>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-12">
       <article class="border-t border-ink pt-6">
         <div class="micro-label text-orange-600 mb-4">01</div>
-        <h3 class="text-xl font-bold mb-3 leading-snug">AI-first authoring</h3>
+        <h3 class="text-xl font-bold mb-3 leading-snug">AI authoring with live ground truth</h3>
         <p class="text-text-muted leading-relaxed">
-          Claude writes the driver, you review. Every accepted driver becomes
-          reference material for the next one. The library compounds.
+          Claude drafts the driver. You probe one register, the workbench
+          shows the real value. Every Lua test runs against the actual
+          device — emissions stream in live, not after a 30-second wait.
         </p>
       </article>
       <article class="border-t border-ink pt-6">
         <div class="micro-label text-orange-600 mb-4">02</div>
-        <h3 class="text-xl font-bold mb-3 leading-snug">Local-first</h3>
+        <h3 class="text-xl font-bold mb-3 leading-snug">Pair however you want</h3>
         <p class="text-text-muted leading-relaxed">
-          Full LAN access on your machine. Probe Modbus TCP, MQTT, HTTP on
-          your own network. No agent to install. No cloud-dependency for
-          the work that matters.
+          Run the agent on your laptop for HTTP-direct pairing, or have it
+          dial out over NATS so the workbench reaches a battery on the other
+          side of a NAT. Same authoring loop, no port-forwarding either way.
         </p>
       </article>
       <article class="border-t border-ink pt-6">
         <div class="micro-label text-orange-600 mb-4">03</div>
-        <h3 class="text-xl font-bold mb-3 leading-snug">Open by default</h3>
+        <h3 class="text-xl font-bold mb-3 leading-snug">Open library, your commit</h3>
         <p class="text-text-muted leading-relaxed">
           Every driver ships as a PR against
-          <a href="https://github.com/frahlg/forty-two-watts" class="text-ink underline decoration-orange-500 underline-offset-4 hover:text-orange-600">frahlg/forty-two-watts</a>.
-          Your name on the commit. No lock-in.
+          <a href="https://github.com/srcfl/hugin-drivers" class="text-ink underline decoration-orange-500 underline-offset-4 hover:text-orange-600">srcfl/hugin-drivers</a>
+          under your GitHub login. MIT-licensed. Any EMS — including
+          <a href="https://github.com/frahlg/forty-two-watts" class="text-ink underline decoration-orange-500 underline-offset-4 hover:text-orange-600">forty-two-watts</a>
+          — can consume it.
         </p>
       </article>
     </div>
   </div>
 </section>
 
-<section id="download" class="max-w-7xl mx-auto w-full px-6 py-24">
-  <div class="micro-label text-text-muted mb-3">Download</div>
-  <h2 class="text-3xl md:text-5xl font-black tracking-tight">Single binary.</h2>
-  <p class="mt-4 text-lg text-text-muted max-w-prose">Unpack, run, browser opens. ~5 MB.</p>
+<!-- =========================================================
+     QUICKSTART — 3 steps
+     ========================================================= -->
+<section class="max-w-7xl mx-auto w-full px-6 py-24">
+  <div class="micro-label text-text-muted mb-3">Quickstart</div>
+  <h2 class="text-3xl md:text-5xl font-black tracking-tight mb-4">Three steps. Two minutes.</h2>
+  <p class="text-text-muted max-w-prose leading-relaxed mb-16">
+    Get from "never heard of Hugin" to "driver shipped" without leaving the
+    browser. The agent is a 12 MB Go binary — no runtime, no daemons, no
+    background services. Auditable in 30 minutes.
+  </p>
 
-  <div class="mt-16 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-border-whisper">
-    <div class="bg-paper p-8 flex flex-col gap-3">
-      <div class="micro-label text-orange-600">macOS · Apple Silicon</div>
-      <h3 class="text-base font-bold">arm64</h3>
-      <a href="https://sourceful-hugin-releases.s3.eu-central-1.amazonaws.com/latest/hugin_0.2.1_darwin_arm64.tar.gz" class="font-mono text-xs text-text-muted hover:text-orange-600 break-all no-underline">hugin_0.2.1_darwin_arm64.tar.gz →</a>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-px bg-border-whisper border border-border-whisper">
+    <div class="bg-paper p-8 flex flex-col gap-4 min-h-[14rem]">
+      <div class="flex items-baseline gap-3">
+        <span class="micro-label text-orange-600">Step 01</span>
+        <span class="font-mono text-[10px] text-text-muted">~10 sec</span>
+      </div>
+      <h3 class="text-lg font-bold leading-snug">Open the workbench</h3>
+      <p class="text-sm text-text-muted leading-relaxed">
+        Sign in with GitHub. The token only forks + opens PRs in your name
+        — Sourceful never reads your repos.
+      </p>
+      <a href="/workbench.html" class="mt-auto pt-3 border-t border-border-subtle font-mono text-xs text-orange-500 hover:text-orange-600 break-all no-underline">
+        hugin.sourceful-labs.net/workbench →
+      </a>
     </div>
-    <div class="bg-paper p-8 flex flex-col gap-3">
-      <div class="micro-label text-orange-600">macOS · Intel</div>
-      <h3 class="text-base font-bold">amd64</h3>
-      <a href="https://sourceful-hugin-releases.s3.eu-central-1.amazonaws.com/latest/hugin_0.2.1_darwin_amd64.tar.gz" class="font-mono text-xs text-text-muted hover:text-orange-600 break-all no-underline">hugin_0.2.1_darwin_amd64.tar.gz →</a>
+
+    <div class="bg-paper p-8 flex flex-col gap-4 min-h-[14rem]">
+      <div class="flex items-baseline gap-3">
+        <span class="micro-label text-orange-600">Step 02</span>
+        <span class="font-mono text-[10px] text-text-muted">~30 sec</span>
+      </div>
+      <h3 class="text-lg font-bold leading-snug">Install the agent</h3>
+      <p class="text-sm text-text-muted leading-relaxed">
+        Pick one. macOS: brew. Windows: scoop. Anywhere else: tarball
+        from <a href="https://github.com/srcfl/hugin-agent/releases" class="text-ink underline decoration-orange-500 underline-offset-4 hover:text-orange-600">GitHub Releases</a>.
+      </p>
+      <a href="#install" class="mt-auto pt-3 border-t border-border-subtle font-mono text-xs text-orange-500 hover:text-orange-600 no-underline">
+        See install commands ↓
+      </a>
     </div>
-    <div class="bg-paper p-8 flex flex-col gap-3">
-      <div class="micro-label text-orange-600">Linux</div>
-      <h3 class="text-base font-bold">x86_64</h3>
-      <a href="https://sourceful-hugin-releases.s3.eu-central-1.amazonaws.com/latest/hugin_0.2.1_linux_amd64.tar.gz" class="font-mono text-xs text-text-muted hover:text-orange-600 break-all no-underline">hugin_0.2.1_linux_amd64.tar.gz →</a>
+
+    <div class="bg-paper p-8 flex flex-col gap-4 min-h-[14rem]">
+      <div class="flex items-baseline gap-3">
+        <span class="micro-label text-orange-600">Step 03</span>
+        <span class="font-mono text-[10px] text-text-muted">~5 min</span>
+      </div>
+      <h3 class="text-lg font-bold leading-snug">Author a driver</h3>
+      <p class="text-sm text-text-muted leading-relaxed">
+        Scan, pick a device, probe a register, let AI draft, test it live,
+        submit as a PR. Your commit lands in
+        <span class="font-mono text-ink">hugin-drivers</span>.
+      </p>
+      <a href="/catalog.html" class="mt-auto pt-3 border-t border-border-subtle font-mono text-xs text-orange-500 hover:text-orange-600 no-underline">
+        See drivers others wrote →
+      </a>
     </div>
-    <div class="bg-paper p-8 flex flex-col gap-3">
-      <div class="micro-label text-orange-600">Linux</div>
-      <h3 class="text-base font-bold">arm64</h3>
-      <a href="https://sourceful-hugin-releases.s3.eu-central-1.amazonaws.com/latest/hugin_0.2.1_linux_arm64.tar.gz" class="font-mono text-xs text-text-muted hover:text-orange-600 break-all no-underline">hugin_0.2.1_linux_arm64.tar.gz →</a>
+  </div>
+</section>
+
+<!-- =========================================================
+     INSTALL — copy-paste one-liners
+     ========================================================= -->
+<section id="install" class="bg-cream border-t border-border-whisper">
+  <div class="max-w-7xl mx-auto w-full px-6 py-24">
+    <div class="micro-label text-text-muted mb-3">Install</div>
+    <h2 class="text-3xl md:text-5xl font-black tracking-tight mb-4">One command.</h2>
+    <p class="text-text-muted max-w-prose leading-relaxed mb-12">
+      The agent listens on <span class="font-mono text-ink">localhost:19090</span>,
+      sweeps your LAN, talks Modbus, runs Lua drivers in a sandbox. Nothing
+      else. No state on disk, no telemetry, no auto-update, no background
+      services. <a href="https://github.com/srcfl/hugin-agent" class="text-ink underline decoration-orange-500 underline-offset-4 hover:text-orange-600">Read every line</a>
+      in 30 minutes.
+    </p>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-border-whisper">
+      <div class="bg-paper p-8 flex flex-col gap-4 min-h-[12rem]">
+        <div class="micro-label text-orange-600">macOS · Linux</div>
+        <h3 class="text-base font-bold">Homebrew</h3>
+        <button class="copy-btn font-mono text-sm bg-paper border border-border-whisper text-left px-3 py-3 pr-20 hover:border-orange-500 transition-colors break-all"
+                data-copy="brew install srcfl/tap/hugin-agent">
+          brew install srcfl/tap/hugin-agent
+        </button>
+        <p class="text-xs text-text-muted mt-auto">Homebrew strips macOS quarantine — no Gatekeeper prompt.</p>
+      </div>
+
+      <div class="bg-paper p-8 flex flex-col gap-4 min-h-[12rem]">
+        <div class="micro-label text-orange-600">Windows</div>
+        <h3 class="text-base font-bold">Scoop</h3>
+        <button class="copy-btn font-mono text-sm bg-paper border border-border-whisper text-left px-3 py-3 pr-20 hover:border-orange-500 transition-colors break-all"
+                data-copy="scoop bucket add srcfl https://github.com/srcfl/scoop-bucket; scoop install hugin-agent">
+          scoop bucket add srcfl …
+        </button>
+        <p class="text-xs text-text-muted mt-auto">First time? <span class="font-mono text-ink">scoop bucket add</span> then <span class="font-mono text-ink">scoop install hugin-agent</span>.</p>
+      </div>
+
+      <div class="bg-paper p-8 flex flex-col gap-4 min-h-[12rem]">
+        <div class="micro-label text-orange-600">Any platform with Go 1.25+</div>
+        <h3 class="text-base font-bold">go install</h3>
+        <button class="copy-btn font-mono text-sm bg-paper border border-border-whisper text-left px-3 py-3 pr-20 hover:border-orange-500 transition-colors break-all"
+                data-copy="go install github.com/srcfl/hugin-agent/cmd/hugin-agent@latest">
+          go install github.com/srcfl/hugin-agent/cmd/hugin-agent@latest
+        </button>
+        <p class="text-xs text-text-muted mt-auto">Build from source. Same binary, no signing.</p>
+      </div>
     </div>
-    <div class="bg-paper p-8 flex flex-col gap-3">
-      <div class="micro-label text-orange-600">Windows</div>
-      <h3 class="text-base font-bold">x86_64</h3>
-      <a href="https://sourceful-hugin-releases.s3.eu-central-1.amazonaws.com/latest/hugin_0.2.1_windows_amd64.zip" class="font-mono text-xs text-text-muted hover:text-orange-600 break-all no-underline">hugin_0.2.1_windows_amd64.zip →</a>
+
+    <p class="mt-8 text-sm text-text-muted">
+      Pre-built tarballs at
+      <a href="https://github.com/srcfl/hugin-agent/releases" class="text-ink underline decoration-orange-500 underline-offset-4 hover:text-orange-600 font-mono">github.com/srcfl/hugin-agent/releases</a>.
+      Linux ARM, Windows ARM, etc. — six platforms total.
+    </p>
+  </div>
+</section>
+
+<!-- =========================================================
+     ARCHITECTURE — four parts, source links
+     ========================================================= -->
+<section class="max-w-7xl mx-auto w-full px-6 py-24">
+  <div class="micro-label text-text-muted mb-3">Architecture</div>
+  <h2 class="text-3xl md:text-5xl font-black tracking-tight mb-8">Four parts. None of them lock you in.</h2>
+  <div class="grid md:grid-cols-2 gap-12">
+    <div class="space-y-4 text-text-muted leading-relaxed">
+      <p>
+        The <span class="text-ink font-bold">workbench</span> runs entirely in
+        your browser. Catalog, AI prompting, driver editor, live test
+        results.
+      </p>
+      <p>
+        The <span class="text-ink font-bold">agent</span> is the open-source
+        Go binary on your machine that the workbench talks to — over HTTP
+        on localhost, or over NATS for headless deployments.
+      </p>
+      <p>
+        The <span class="text-ink font-bold">API</span> (Sourceful-hosted)
+        proxies the Claude API key, handles GitHub OAuth, and signs short-lived
+        NATS credentials. Open-source code; your AI usage is logged but
+        never sold.
+      </p>
+      <p>
+        The <span class="text-ink font-bold">driver library</span> is a
+        public GitHub repo — every accepted driver lands there under your
+        name. Any EMS consumes it via the catalog API.
+      </p>
     </div>
-    <div class="bg-paper p-8 flex flex-col gap-3">
-      <div class="micro-label text-orange-600">Windows</div>
-      <h3 class="text-base font-bold">arm64</h3>
-      <a href="https://sourceful-hugin-releases.s3.eu-central-1.amazonaws.com/latest/hugin_0.2.1_windows_arm64.zip" class="font-mono text-xs text-text-muted hover:text-orange-600 break-all no-underline">hugin_0.2.1_windows_arm64.zip →</a>
+    <div class="border border-border-whisper bg-cream p-6 font-mono text-xs text-text-muted leading-relaxed">
+      <div class="text-ink mb-2">Source</div>
+      <div class="space-y-1">
+        <div>→ <a href="https://github.com/srcfl/sourceful-hugin" class="text-text-muted hover:text-orange-500 no-underline">srcfl/sourceful-hugin</a> · API (Go, MIT)</div>
+        <div>→ <a href="https://github.com/srcfl/hugin-agent" class="text-text-muted hover:text-orange-500 no-underline">srcfl/hugin-agent</a> · agent (Go, MIT)</div>
+        <div>→ <a href="https://github.com/srcfl/sourceful-hugin-site" class="text-text-muted hover:text-orange-500 no-underline">srcfl/sourceful-hugin-site</a> · workbench (HTML, MIT)</div>
+        <div>→ <a href="https://github.com/srcfl/hugin-drivers" class="text-text-muted hover:text-orange-500 no-underline">srcfl/hugin-drivers</a> · drivers (Lua, MIT)</div>
+      </div>
+
+      <div class="text-ink mt-6 mb-2">Live endpoints</div>
+      <div class="space-y-1">
+        <div>workbench → <a href="/workbench.html" class="text-text-muted hover:text-orange-500 no-underline">hugin.sourceful-labs.net</a></div>
+        <div>API → <a href="https://api.hugin.sourceful-labs.net/v1/health" class="text-text-muted hover:text-orange-500 no-underline">api.hugin.sourceful-labs.net</a></div>
+        <div>NATS → <span class="text-text-muted">wss://nats.hugin.sourceful-labs.net</span></div>
+      </div>
     </div>
   </div>
 </section>
@@ -178,21 +324,46 @@
 <footer class="mt-auto border-t border-border-whisper">
   <div class="max-w-7xl mx-auto w-full px-6 py-8 flex flex-wrap justify-between gap-4 text-sm text-text-muted">
     <div>
-      <span class="font-bold text-ink">Hugin</span> · made by <a href="https://sourceful.energy" class="text-text-muted hover:text-ink no-underline">Sourceful</a> ·
-      drivers land in <a href="https://github.com/frahlg/forty-two-watts" class="text-text-muted hover:text-ink no-underline">forty-two-watts</a>
+      <span class="font-bold text-ink">Hugin</span> · made by
+      <a href="https://sourceful.energy" class="text-text-muted hover:text-ink no-underline">Sourceful</a>
+      · drivers land in
+      <a href="https://github.com/srcfl/hugin-drivers" class="text-text-muted hover:text-ink no-underline">hugin-drivers</a>
     </div>
-    <div>
+    <div class="flex gap-4">
       <a href="https://api.hugin.sourceful-labs.net/v1/health" class="font-mono text-xs hover:text-ink no-underline">api status →</a>
     </div>
   </div>
 </footer>
 
 <script>
+  // Catalog count — replaces "…" with the live driver count from
+  // the API. Best-effort; failure leaves the ellipsis.
   const API_BASE = 'https://api.hugin.sourceful-labs.net';
   fetch(API_BASE + '/v1/catalog').then(r => r.json()).then(d => {
     const el = document.getElementById('catalog-count');
     if (el && Array.isArray(d)) el.textContent = d.length;
-  }).catch(()=>{});
+  }).catch(() => {});
+
+  // Click-to-copy on the install command cards. The button shows
+  // "copied ✓" for two seconds, then reverts. No analytics — we
+  // don't track clicks.
+  document.querySelectorAll('.copy-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const text = btn.getAttribute('data-copy') || btn.textContent.trim();
+      navigator.clipboard.writeText(text).then(() => {
+        btn.classList.add('copied');
+        setTimeout(() => btn.classList.remove('copied'), 2000);
+      }).catch(() => {
+        // Older browser / blocked permission — show selection so the
+        // user can Cmd-C manually.
+        const range = document.createRange();
+        range.selectNodeContents(btn);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      });
+    });
+  });
 </script>
 
 </body>
