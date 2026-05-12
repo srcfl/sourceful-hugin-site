@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Self-hosting + ops — Hugin docs</title>
+<meta name="description" content="How to run hugin-api, hugin-nats, and the workbench yourself. Env vars, NATS account setup, and the security model.">
+
+<link href="https://api.fontshare.com/css?f[]=satoshi@300,400,500,700,900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="/docs/docs.css" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+  :root {
+    --color-ground-paper: #0A0A0A;
+    --color-ground-cream: #161616;
+    --color-ground-ink: #F5F2E1;
+    --color-signal-orange: #E85D1F;
+    --color-signal-orange-600: #FF7A3D;
+    --color-text-near-black: #F5F2E1;
+    --color-text-muted: #9CA3AF;
+    --color-border-whisper: rgba(245, 242, 225, 0.12);
+    --color-border-subtle: rgba(245, 242, 225, 0.06);
+  }
+  html { font-family: "Satoshi", system-ui, sans-serif; background: var(--color-ground-paper); color: var(--color-text-near-black); color-scheme: dark; }
+  body { background: var(--color-ground-paper); }
+  .font-mono { font-family: "JetBrains Mono", monospace; }
+  .micro-label { font-family: "JetBrains Mono", monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+</style>
+<script>
+  tailwind.config = { theme: { extend: { colors: {
+    paper:'var(--color-ground-paper)', cream:'var(--color-ground-cream)', ink:'var(--color-ground-ink)',
+    orange: { 500:'var(--color-signal-orange)', 600:'var(--color-signal-orange-600)' },
+    'text-muted':'var(--color-text-muted)', 'border-whisper':'var(--color-border-whisper)',
+  }}}};
+</script>
+</head>
+<body class="min-h-dvh flex flex-col bg-paper text-text-primary antialiased">
+
+<nav class="max-w-7xl mx-auto w-full px-6 py-6 flex items-center justify-between gap-4">
+  <a href="/" class="flex items-center gap-2 text-lg font-bold tracking-tight text-ink no-underline">
+    <span class="w-3 h-3 bg-orange-500 inline-block"></span> Hugin
+  </a>
+  <div class="flex items-center gap-6">
+    <a href="/docs/" class="hidden sm:inline text-sm font-medium text-orange-500 transition-colors no-underline">Docs</a>
+    <a href="/catalog.html" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">Catalog</a>
+    <a href="/workbench.html" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">Workbench</a>
+    <a href="https://github.com/srcfl/hugin-drivers" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">GitHub</a>
+  </div>
+</nav>
+
+<div class="docs-layout">
+  <aside class="docs-sidebar">
+    <h4>Docs</h4>
+    <a href="/docs/">Quickstart</a>
+    <a href="/docs/authoring.html">Authoring drivers</a>
+    <a href="/docs/operating.html" class="active">Self-hosting + ops</a>
+    <h4 style="margin-top: 2rem;">External</h4>
+    <a href="https://github.com/srcfl/hugin-agent">hugin-agent ↗</a>
+    <a href="https://github.com/srcfl/hugin-drivers">hugin-drivers ↗</a>
+    <a href="https://github.com/srcfl/sourceful-hugin">hugin-api ↗</a>
+  </aside>
+
+  <main class="docs-content">
+
+    <h1>Self-hosting + ops</h1>
+    <p class="lede">
+      For people running the API and broker themselves — paranoid
+      enterprise, air-gapped lab, or just don't want to depend on
+      Sourceful's uptime. Everything except the AI inference is
+      self-hostable; you bring your own Anthropic key.
+    </p>
+
+    <h2>Architecture recap</h2>
+    <p>
+      Four moving parts:
+    </p>
+    <ul>
+      <li><strong>workbench</strong> — static HTML served by anything (Cloudflare Workers, S3, nginx). Repo: <a href="https://github.com/srcfl/sourceful-hugin-site">sourceful-hugin-site</a>.</li>
+      <li><strong>hugin-api</strong> — Go binary. Catalog + AI proxy + GitHub OAuth + NATS signer. Repo: <a href="https://github.com/srcfl/sourceful-hugin">sourceful-hugin</a>.</li>
+      <li><strong>hugin-nats</strong> — a NATS server with auth-callout pointed at hugin-api. Self-hosted; any binary release of <a href="https://nats.io/download/">nats-server</a> works.</li>
+      <li><strong>hugin-agent</strong> — the local helper your end users install. Repo: <a href="https://github.com/srcfl/hugin-agent">hugin-agent</a>.</li>
+    </ul>
+
+    <h2>Running hugin-api</h2>
+    <p>
+      Single Go binary. Build with <code>make build</code>, image with
+      <code>Dockerfile.api</code>. Runs HTTP on
+      <code>HUGIN_API_PORT</code> (default 8080).
+    </p>
+
+    <h3>Required environment</h3>
+    <table class="api-ref">
+      <tr><th>Variable</th><th>Why</th></tr>
+      <tr><td class="sig">ANTHROPIC_API_KEY</td><td class="desc">Your Anthropic key. Used by the <code>/v1/ai/messages</code> proxy. Without it the AI endpoint returns 503.</td></tr>
+      <tr><td class="sig">GITHUB_OAUTH_CLIENT_ID</td><td class="desc">From a GitHub OAuth App. Drives the <code>/v1/auth/login</code> + <code>/v1/auth/callback</code> flow.</td></tr>
+      <tr><td class="sig">GITHUB_OAUTH_CLIENT_SECRET</td><td class="desc">Matching secret.</td></tr>
+      <tr><td class="sig">DRIVERS_PATH</td><td class="desc">Path to the <code>hugin-drivers</code> checkout. Defaults to <code>/app/drivers</code> in the Docker image.</td></tr>
+      <tr><td class="sig">HUGIN_SHARE_HMAC_SECRET</td><td class="desc">Server-side HMAC key for the share-token feature. 32+ random bytes. Without it <code>/v1/share/*</code> returns 503.</td></tr>
+    </table>
+
+    <h3>Optional — NATS signer</h3>
+    <p>
+      Without these set, the workbench works fine in local-pair (HTTP)
+      mode. With them set, you also get remote-pair mode.
+    </p>
+    <table class="api-ref">
+      <tr><th>Variable</th><th>Why</th></tr>
+      <tr><td class="sig">NATS_URL</td><td class="desc"><code>wss://nats.your-host</code>. The URL the agent should dial.</td></tr>
+      <tr><td class="sig">NATS_OPERATOR_NKEY_SEED</td><td class="desc">The signing nkey seed (SOAA…). hugin-api uses it to mint user JWTs.</td></tr>
+      <tr><td class="sig">NATS_ACCOUNT_JWT</td><td class="desc">The pre-signed account JWT all minted users belong to.</td></tr>
+      <tr><td class="sig">NATS_CALLOUT_USER_CREDS</td><td class="desc">Path to the creds-file for the auth-callout <em>service</em> account. With this set, hugin-api subscribes to the callout subject at boot.</td></tr>
+      <tr><td class="sig">NATS_CALLOUT_SUBJECT</td><td class="desc">Override the callout subject. Default <code>$SYS.REQ.USER.AUTH</code>.</td></tr>
+    </table>
+
+    <h2>Running hugin-nats</h2>
+    <p>
+      Standard NATS server with auth-callout configured to delegate to
+      hugin-api. Minimal config:
+    </p>
+<pre><code>port: 4222
+http_port: 8222
+websocket {
+  port: 443
+  tls {
+    cert_file: "/etc/ssl/cert.pem"
+    key_file:  "/etc/ssl/key.pem"
+  }
+}
+
+# Operator setup — generate once with `nsc`, push to a resolver.
+operator: /etc/nats/operator.jwt
+system_account: "ACCSYS…"
+resolver: { type: full, dir: "/etc/nats/jwt" }
+
+# Auth-callout delegates every CONNECT to hugin-api. The service
+# account itself authenticates with a creds file; user JWTs come
+# back signed under the HUGIN account.
+authorization {
+  auth_callout {
+    issuer: "AHUGIN…"         # account public key signing user JWTs
+    account: HUGIN_CALLOUT    # account the callout service lives in
+    users:   ["UCALLOUT…"]    # the callout service user nkey
+  }
+}</code></pre>
+
+    <p>
+      Bootstrap nkeys with <a href="https://docs.nats.io/using-nats/nats-tools/nsc">nsc</a>.
+      Generate one <code>HUGIN</code> account for end users, one
+      <code>HUGIN_CALLOUT</code> account for the auth-callout service,
+      and a single user in each. Hand the
+      <code>HUGIN_CALLOUT</code> user's creds file to hugin-api as
+      <code>NATS_CALLOUT_USER_CREDS</code>; hand the
+      <code>HUGIN</code> account's signing-nkey seed as
+      <code>NATS_OPERATOR_NKEY_SEED</code>.
+    </p>
+
+    <h2>Running hugin-agent</h2>
+    <p>
+      Two modes; they can run side by side.
+    </p>
+
+    <h3>HTTP mode (local-pair)</h3>
+<pre><code>hugin-agent
+# → opens browser to /settings.html#agent_url=…&token=…</code></pre>
+
+    <table class="api-ref">
+      <tr><th>Flag / env</th><th>Default</th></tr>
+      <tr><td class="sig">--host / HUGIN_AGENT_HOST</td><td class="desc"><code>127.0.0.1</code>. Bind only to localhost unless you trust your LAN.</td></tr>
+      <tr><td class="sig">--port / HUGIN_AGENT_PORT</td><td class="desc"><code>19090</code>.</td></tr>
+      <tr><td class="sig">--token / HUGIN_AGENT_TOKEN</td><td class="desc">Random if unset. Printed on startup + carried in the pairing deep-link fragment.</td></tr>
+      <tr><td class="sig">--pairing-url</td><td class="desc"><code>https://hugin.sourceful-labs.net/settings.html</code>. Override for self-hosted workbenches.</td></tr>
+      <tr><td class="sig">--no-browser</td><td class="desc">Don't auto-open. For headless devices.</td></tr>
+    </table>
+
+    <h3>NATS mode (remote-pair)</h3>
+<pre><code># One-shot: register with your hugin-api and write creds to disk.
+hugin-agent --register --gh-token=&lt;your_gh_token&gt; --api-url=https://api.example
+
+# Subsequent runs: agent reads creds.json and dials NATS.
+hugin-agent</code></pre>
+
+    <p>
+      Creds land at <code>$XDG_CONFIG_HOME/hugin-agent/creds.json</code>
+      (mode 0600). Override with <code>--creds</code> or
+      <code>HUGIN_AGENT_CREDS</code>. JWTs expire after 30 days; the
+      agent prints a renewal hint when within 7 days of expiry.
+    </p>
+
+    <h2>Security model</h2>
+
+    <h3>What the agent can do on your machine</h3>
+    <ul>
+      <li>Listen on a TCP port you specified (default <code>127.0.0.1:19090</code>).</li>
+      <li>Open outbound TCP for Modbus / HTTP / MQTT to addresses the workbench requests.</li>
+      <li>Open outbound WSS to your hugin-api + NATS broker.</li>
+      <li>Execute Lua code the workbench sends, inside a gopher-lua sandbox with no <code>os.*</code>, no <code>io.*</code>, no <code>require</code>.</li>
+    </ul>
+
+    <h3>What the agent <em>can't</em> do</h3>
+    <ul>
+      <li>Write to disk (creds.json is the only file written; you can audit the path).</li>
+      <li>Auto-update. New versions arrive only through <code>brew upgrade</code> / <code>scoop update</code> / a manual binary swap.</li>
+      <li>Run shell commands. The Lua sandbox doesn't expose <code>os.execute</code>.</li>
+      <li>Phone home. There is no telemetry endpoint. All outbound traffic is to your configured workbench / API / broker.</li>
+    </ul>
+
+    <h3>Token model</h3>
+    <ul>
+      <li><strong>Local-pair token</strong> — random hex, kept only in the agent's memory + your browser's localStorage. Never sent anywhere else.</li>
+      <li><strong>NATS user JWT</strong> — signed by your hugin-api, valid 30 days. Scoped to <code>agent.&lt;your_agent_id&gt;.&gt;</code> — can't publish or subscribe outside that prefix.</li>
+      <li><strong>Share token</strong> — HMAC-signed by hugin-api, short TTL (default 24h), scoped to <code>read+test</code> on the shared agent only. Revocable by clearing <code>HUGIN_SHARE_HMAC_SECRET</code> (nuclear option; rotates all shares).</li>
+      <li><strong>GitHub OAuth token</strong> — held in browser localStorage, scope <code>public_repo</code>. Revoke at <a href="https://github.com/settings/applications">github.com/settings/applications</a>.</li>
+    </ul>
+
+    <h2>Catalog hosting</h2>
+    <p>
+      <code>hugin-drivers</code> is a plain Git repo. hugin-api clones
+      it at build time (Dockerfile copies it into the image) and serves
+      it via <code>/v1/catalog</code>. To update the catalog:
+    </p>
+    <ol>
+      <li>Merge a driver PR on <code>srcfl/hugin-drivers</code> (or your fork).</li>
+      <li>Rebuild + redeploy the hugin-api image with the new commit.</li>
+    </ol>
+    <p>
+      A future iteration will hot-pull instead of build-time-baking, but
+      for beta this is the simplest path.
+    </p>
+
+    <h2>Observability</h2>
+    <p>
+      hugin-api emits structured logs:
+    </p>
+    <ul>
+      <li>Request logs — method, path, status, latency. Standard access log.</li>
+      <li><code>usage.ai {…}</code> — one JSON line per <code>/v1/ai/messages</code> call. User login, token counts, status, response size, timestamp.</li>
+      <li><code>nats: …</code> — auth-callout connection state.</li>
+    </ul>
+    <p>
+      Scrape with Better Stack, Grafana Loki, or whatever your stack
+      prefers. No dedicated metrics endpoint yet; track the
+      <code>usage.ai</code> lines to size your AI quota.
+    </p>
+
+    <h2>Limits + known gaps</h2>
+    <ul>
+      <li>Agent registry is in-memory — a hugin-api restart loses the GitHub-user-id → agent-id mapping. Already-registered agents stay valid for their JWT lifetime but new pairings have to be re-issued. File-backed persistence is on the roadmap.</li>
+      <li>No metrics endpoint (Prometheus / OpenTelemetry). Logs only.</li>
+      <li>No driver hot-reload — catalog is baked into the image at build time.</li>
+      <li>No multi-broker NATS routing — single broker per deployment.</li>
+    </ul>
+
+  </main>
+</div>
+
+<footer class="mt-auto border-t border-border-whisper">
+  <div class="max-w-7xl mx-auto w-full px-6 py-8 flex flex-wrap justify-between gap-4 text-sm text-text-muted">
+    <div>
+      <span class="font-bold text-ink">Hugin</span> · made by
+      <a href="https://sourceful.energy" class="text-text-muted hover:text-ink no-underline">Sourceful</a>
+    </div>
+    <div class="flex gap-4">
+      <a href="/privacy.html" class="hover:text-ink no-underline">Privacy</a>
+      <a href="/terms.html" class="hover:text-ink no-underline">Terms</a>
+      <a href="https://github.com/srcfl/hugin-drivers" class="hover:text-ink no-underline">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

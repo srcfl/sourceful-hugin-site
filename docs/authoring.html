@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Authoring drivers — Hugin docs</title>
+<meta name="description" content="DRIVER table fields, Lua host API reference, sign conventions, and common pitfalls when writing a Hugin driver.">
+
+<link href="https://api.fontshare.com/css?f[]=satoshi@300,400,500,700,900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="/docs/docs.css" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+  :root {
+    --color-ground-paper: #0A0A0A;
+    --color-ground-cream: #161616;
+    --color-ground-ink: #F5F2E1;
+    --color-signal-orange: #E85D1F;
+    --color-signal-orange-600: #FF7A3D;
+    --color-text-near-black: #F5F2E1;
+    --color-text-muted: #9CA3AF;
+    --color-border-whisper: rgba(245, 242, 225, 0.12);
+    --color-border-subtle: rgba(245, 242, 225, 0.06);
+  }
+  html { font-family: "Satoshi", system-ui, sans-serif; background: var(--color-ground-paper); color: var(--color-text-near-black); color-scheme: dark; }
+  body { background: var(--color-ground-paper); }
+  .font-mono { font-family: "JetBrains Mono", monospace; }
+  .micro-label { font-family: "JetBrains Mono", monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+</style>
+<script>
+  tailwind.config = { theme: { extend: { colors: {
+    paper:'var(--color-ground-paper)', cream:'var(--color-ground-cream)', ink:'var(--color-ground-ink)',
+    orange: { 500:'var(--color-signal-orange)', 600:'var(--color-signal-orange-600)' },
+    'text-muted':'var(--color-text-muted)', 'border-whisper':'var(--color-border-whisper)',
+  }}}};
+</script>
+</head>
+<body class="min-h-dvh flex flex-col bg-paper text-text-primary antialiased">
+
+<nav class="max-w-7xl mx-auto w-full px-6 py-6 flex items-center justify-between gap-4">
+  <a href="/" class="flex items-center gap-2 text-lg font-bold tracking-tight text-ink no-underline">
+    <span class="w-3 h-3 bg-orange-500 inline-block"></span> Hugin
+  </a>
+  <div class="flex items-center gap-6">
+    <a href="/docs/" class="hidden sm:inline text-sm font-medium text-orange-500 transition-colors no-underline">Docs</a>
+    <a href="/catalog.html" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">Catalog</a>
+    <a href="/workbench.html" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">Workbench</a>
+    <a href="https://github.com/srcfl/hugin-drivers" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">GitHub</a>
+  </div>
+</nav>
+
+<div class="docs-layout">
+  <aside class="docs-sidebar">
+    <h4>Docs</h4>
+    <a href="/docs/">Quickstart</a>
+    <a href="/docs/authoring.html" class="active">Authoring drivers</a>
+    <a href="/docs/operating.html">Self-hosting + ops</a>
+    <h4 style="margin-top: 2rem;">External</h4>
+    <a href="https://github.com/srcfl/hugin-agent">hugin-agent ↗</a>
+    <a href="https://github.com/srcfl/hugin-drivers">hugin-drivers ↗</a>
+    <a href="https://github.com/srcfl/sourceful-hugin">hugin-api ↗</a>
+  </aside>
+
+  <main class="docs-content">
+
+    <h1>Authoring drivers</h1>
+    <p class="lede">
+      A Hugin driver is a single Lua file that exposes a
+      <code>DRIVER</code> metadata table plus four lifecycle functions.
+      The runtime calls them in a sandbox; you talk to hardware through
+      a <code>host.*</code> API. ~100 lines for a working meter driver.
+    </p>
+
+    <h2>The shape of a driver</h2>
+<pre><code>DRIVER = {
+  id                  = "manufacturer_model",
+  name                = "Manufacturer Model",
+  manufacturer        = "Manufacturer",
+  version             = "0.1.0",
+  protocols           = { "modbus" },
+  capabilities        = { "meter" },
+  tested_models       = {},
+  verification_status = "experimental",
+  description         = "One-sentence purpose.",
+  connection_defaults = { port = 502, slave_id = 1 },
+}
+
+PROTOCOL = "modbus"
+
+function driver_init(config)
+  host.set_make("Manufacturer")
+  host.set_sn(config.serial or "unknown")
+end
+
+function driver_poll()
+  local power = host.modbus_read(0x4000, 2, "i32_be")
+  if power then host.emit("meter", { power_w = -power }) end
+  return 5000   -- next poll in ms
+end
+
+function driver_command(action, power_w, cmd) end
+function driver_default_mode() end
+function driver_cleanup() end</code></pre>
+
+    <h2>DRIVER metadata</h2>
+    <p>The metadata table is consumed by the catalog API + by any EMS reading the driver. Every field below is required unless marked otherwise.</p>
+
+    <table class="api-ref">
+      <tr><th>Field</th><th>Type</th><th>Notes</th></tr>
+      <tr><td class="sig">id</td><td>string</td><td class="desc">Unique slug. Lowercase + underscores. Convention: <code>manufacturer_model</code>.</td></tr>
+      <tr><td class="sig">name</td><td>string</td><td class="desc">Human-readable display name.</td></tr>
+      <tr><td class="sig">manufacturer</td><td>string</td><td class="desc">Vendor name as commonly written.</td></tr>
+      <tr><td class="sig">version</td><td>string</td><td class="desc">SemVer. Bump on breaking driver behaviour.</td></tr>
+      <tr><td class="sig">protocols</td><td>string[]</td><td class="desc">One or more of <code>"modbus"</code>, <code>"mqtt"</code>, <code>"http"</code>.</td></tr>
+      <tr><td class="sig">capabilities</td><td>string[]</td><td class="desc">One or more of <code>"meter"</code>, <code>"pv"</code>, <code>"battery"</code>, <code>"ev"</code>.</td></tr>
+      <tr><td class="sig">tested_models</td><td>string[]</td><td class="desc">Exact model numbers verified on live hardware. Empty = experimental.</td></tr>
+      <tr><td class="sig">verification_status</td><td>string</td><td class="desc"><code>"experimental"</code> · <code>"community-verified"</code> · <code>"vendor-verified"</code>.</td></tr>
+      <tr><td class="sig">description</td><td>string</td><td class="desc">One sentence. Appears in the catalog listing.</td></tr>
+      <tr><td class="sig">connection_defaults</td><td>table</td><td class="desc"><code>{ port, slave_id }</code> for Modbus; whatever's relevant for HTTP / MQTT.</td></tr>
+    </table>
+
+    <h2>Lifecycle functions</h2>
+    <p>The runtime calls these in order on every poll cycle.</p>
+
+    <table class="api-ref">
+      <tr><th>Function</th><th>Called when</th><th>What it does</th></tr>
+      <tr><td class="sig">driver_init(config)</td><td>Once, before the first poll</td><td class="desc">Set make/serial, parse static config. <code>config</code> is the table from the connection form (<code>host</code>, <code>port</code>, <code>slave_id</code>, plus anything custom).</td></tr>
+      <tr><td class="sig">driver_poll()</td><td>Every cycle</td><td class="desc">Read registers, call <code>host.emit(...)</code> with the parsed values. Return the next-poll delay in milliseconds.</td></tr>
+      <tr><td class="sig">driver_command(action, power_w, cmd)</td><td>When an EMS issues a command</td><td class="desc">Battery / EV chargers only. <code>action</code> ∈ <code>"charge"</code>, <code>"discharge"</code>, <code>"idle"</code>. Most read-only drivers leave this empty.</td></tr>
+      <tr><td class="sig">driver_default_mode()</td><td>When the EMS resets the device</td><td class="desc">Return the device to a safe default (idle, max-rate, etc.).</td></tr>
+      <tr><td class="sig">driver_cleanup()</td><td>Once, before the driver unloads</td><td class="desc">Close subscriptions, save state. Usually empty.</td></tr>
+    </table>
+
+    <h2>Sign convention — <strong>don't break this</strong></h2>
+    <div class="callout">
+      <p>
+        Positive watts = power flowing <strong>into the site</strong> at the
+        grid meter boundary. The driver is the only layer that flips signs.
+      </p>
+    </div>
+    <ul>
+      <li><strong>Grid meter</strong>: import = <code>+</code>, export = <code>−</code>.</li>
+      <li><strong>PV inverter</strong>: generation is always <code>−</code> (it leaves the site at the boundary, so it offsets imports).</li>
+      <li><strong>Battery</strong>: charging = <code>+</code> (consumes site energy), discharging = <code>−</code>.</li>
+      <li><strong>EV charger</strong>: drawing power = <code>+</code>.</li>
+    </ul>
+    <p>
+      If a vendor's register documents "power generated" as positive, that's
+      a flip your driver must do. <code>host.emit("pv", { power_w = -raw })</code>
+      is the typical pattern.
+    </p>
+
+    <h2>Host API reference</h2>
+
+    <h3>Driver metadata</h3>
+    <table class="api-ref">
+      <tr><th>Function</th><th>Purpose</th></tr>
+      <tr><td class="sig">host.set_make(s)</td><td class="desc">Record the manufacturer string. Usually called in <code>driver_init</code>.</td></tr>
+      <tr><td class="sig">host.set_sn(s)</td><td class="desc">Record the device serial number.</td></tr>
+      <tr><td class="sig">host.set_poll_interval(ms)</td><td class="desc">Override the poll cadence. Alternative to returning the delay from <code>driver_poll</code>.</td></tr>
+    </table>
+
+    <h3>Emitting values</h3>
+    <table class="api-ref">
+      <tr><th>Function</th><th>Purpose</th></tr>
+      <tr><td class="sig">host.emit(channel, table)</td><td class="desc">Publish a measurement. <code>channel</code> ∈ <code>"meter"</code>, <code>"pv"</code>, <code>"battery"</code>, <code>"ev"</code>. The table's keys are channel-specific (<code>power_w</code>, <code>soc</code>, etc.).</td></tr>
+      <tr><td class="sig">host.emit_metric(name, number)</td><td class="desc">Publish a free-form gauge or counter. Renders in the Live panel's Metrics block.</td></tr>
+      <tr><td class="sig">host.log(level, msg)</td><td class="desc">Append a log line. <code>level</code> ∈ <code>"debug"</code>, <code>"info"</code>, <code>"warn"</code>, <code>"error"</code>.</td></tr>
+    </table>
+
+    <h3>Modbus</h3>
+    <table class="api-ref">
+      <tr><th>Function</th><th>Purpose</th></tr>
+      <tr><td class="sig">host.modbus_read(addr, count, kind)</td><td class="desc">Read <code>count</code> holding-registers from <code>addr</code> and decode as <code>kind</code> ∈ <code>u16</code> · <code>i16</code> · <code>u32_be</code> · <code>u32_le</code> · <code>i32_be</code> · <code>i32_le</code> · <code>f32_be</code> · <code>f32_le</code>. Returns nil on failure.</td></tr>
+      <tr><td class="sig">host.modbus_write(addr, value)</td><td class="desc">Single-register write (FC06).</td></tr>
+      <tr><td class="sig">host.modbus_write_multi(addr, values)</td><td class="desc">Multi-register write (FC16). <code>values</code> is an array of u16.</td></tr>
+    </table>
+
+    <h3>MQTT</h3>
+    <table class="api-ref">
+      <tr><th>Function</th><th>Purpose</th></tr>
+      <tr><td class="sig">host.mqtt_sub(topic)</td><td class="desc">Subscribe to a topic. Messages buffer until you read them.</td></tr>
+      <tr><td class="sig">host.mqtt_messages()</td><td class="desc">Drain the inbound buffer. Returns an array of <code>{topic, payload}</code>.</td></tr>
+      <tr><td class="sig">host.mqtt_pub(topic, payload)</td><td class="desc">Publish.</td></tr>
+    </table>
+
+    <h3>HTTP</h3>
+    <table class="api-ref">
+      <tr><th>Function</th><th>Purpose</th></tr>
+      <tr><td class="sig">host.http_get(url, headers)</td><td class="desc">GET request. Returns <code>{status, body}</code>.</td></tr>
+      <tr><td class="sig">host.http_post(url, body, headers)</td><td class="desc">POST request.</td></tr>
+    </table>
+
+    <h3>Decoders + utilities</h3>
+    <table class="api-ref">
+      <tr><th>Function</th><th>Purpose</th></tr>
+      <tr><td class="sig">host.millis()</td><td class="desc">Monotonic milliseconds since the driver loaded. For rate-limiting and watchdogs.</td></tr>
+      <tr><td class="sig">host.json_encode(t)</td><td class="desc">Lua table → JSON string.</td></tr>
+      <tr><td class="sig">host.json_decode(s)</td><td class="desc">JSON string → Lua table.</td></tr>
+      <tr><td class="sig">host.decode_u32_be / _le, _i32_be / _le, _i16</td><td class="desc">Manual byte-pair decoders if you read raw registers with <code>modbus_read(..., "u16")</code> and want to combine words yourself.</td></tr>
+    </table>
+
+    <h2>Common pitfalls</h2>
+    <ul>
+      <li><strong>Word order</strong> — most inverters use big-endian (<code>i32_be</code>), but cheap clones often flip. If your reading is wildly wrong, try <code>_le</code> first.</li>
+      <li><strong>Scaling</strong> — vendors often store "watts × 10" or "volts × 100" so they can use unsigned integers. Read the manual carefully; the driver should divide by the scale factor before emitting.</li>
+      <li><strong>Sign flip</strong> — if your meter shows the right magnitude but wrong direction, you're missing a negation. The Live panel + the catalog API both follow the same convention; if your emission disagrees with the rest of the catalog, your driver is wrong.</li>
+      <li><strong>Polling cadence</strong> — most Modbus devices choke at &lt;200ms intervals. Return at least <code>1000</code> from <code>driver_poll</code> unless you've verified the device handles faster.</li>
+      <li><strong>No state across polls</strong> — Lua locals reset on every <code>driver_poll</code> call. If you need state (rolling averages, last-seen counters), use module-level globals declared outside the function.</li>
+    </ul>
+
+    <h2>Sandbox limits</h2>
+    <p>
+      Drivers run in a <a href="https://github.com/yuin/gopher-lua">gopher-lua</a>
+      sandbox with no <code>os.*</code>, no <code>io.*</code>, no
+      <code>require</code>. The only outside-world access is through
+      <code>host.*</code>. A driver that loops forever in
+      <code>driver_poll</code> is killed after the test duration
+      (5–120s, set by the slider in the workbench). In production an EMS
+      enforces its own timeout — usually 1–5s per poll.
+    </p>
+
+    <h2>Next</h2>
+    <ul>
+      <li><a href="/docs/operating.html">Self-hosting + ops</a> — for people running the API + broker themselves.</li>
+      <li><a href="https://github.com/srcfl/hugin-drivers/tree/main/drivers">Read other drivers</a> — the catalog is the best reference.</li>
+    </ul>
+  </main>
+</div>
+
+<footer class="mt-auto border-t border-border-whisper">
+  <div class="max-w-7xl mx-auto w-full px-6 py-8 flex flex-wrap justify-between gap-4 text-sm text-text-muted">
+    <div>
+      <span class="font-bold text-ink">Hugin</span> · made by
+      <a href="https://sourceful.energy" class="text-text-muted hover:text-ink no-underline">Sourceful</a>
+    </div>
+    <div class="flex gap-4">
+      <a href="/privacy.html" class="hover:text-ink no-underline">Privacy</a>
+      <a href="/terms.html" class="hover:text-ink no-underline">Terms</a>
+      <a href="https://github.com/srcfl/hugin-drivers" class="hover:text-ink no-underline">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
