@@ -150,15 +150,30 @@
   </div>
 
   <div class="flex items-center gap-5">
-    <!-- Agent pill -->
-    <template x-if="agentURL">
+    <!-- Agent pill — local mode (HTTP-direct) -->
+    <template x-if="agentKind === 'local' && agentURL">
       <a href="/settings.html" :title="agentURL"
          class="hidden sm:inline-flex items-center gap-1.5 font-mono text-xs text-text-muted hover:text-ink transition-colors no-underline">
         <span class="w-1.5 h-1.5 rounded-full bg-confirmed-green inline-block"></span>
-        agent
+        agent · local
       </a>
     </template>
-    <template x-if="!agentURL">
+
+    <!-- Agent pill — remote mode (NATS). Green when presence
+         heartbeat seen in last 30s, amber while we wait for the
+         first beat / on reconnect, orange when stale. -->
+    <template x-if="agentKind === 'remote' && agentId">
+      <a href="/settings.html"
+         :title="agentId + ' · ' + agentNatsURL + (agentOnline ? '' : ' (no presence — agent offline?)')"
+         class="hidden sm:inline-flex items-center gap-1.5 font-mono text-xs text-text-muted hover:text-ink transition-colors no-underline">
+        <span class="w-1.5 h-1.5 rounded-full inline-block"
+              :class="agentOnline ? 'bg-confirmed-green' : 'bg-orange-500'"></span>
+        <span x-text="agentOnline ? 'agent · remote' : 'agent · remote (offline)'"></span>
+      </a>
+    </template>
+
+    <!-- Agent pill — nothing paired -->
+    <template x-if="(!agentURL || agentKind !== 'local') && (!agentId || agentKind !== 'remote')">
       <a href="/settings.html"
          class="hidden sm:inline-flex items-center gap-1.5 font-mono text-xs text-text-muted hover:text-ink transition-colors no-underline">
         <span class="w-1.5 h-1.5 rounded-full bg-orange-500 inline-block"></span>
@@ -220,8 +235,8 @@
       <!-- Two main actions -->
       <div class="grid sm:grid-cols-2 gap-px bg-border-whisper border border-border-whisper mb-8">
         <button @click="scanLAN()"
-                :disabled="!agentURL || scanning"
-                :title="!agentURL ? 'Pair an agent in /settings.html' : 'Scan your LAN with the paired agent'"
+                :disabled="!agentReady || scanning"
+                :title="!agentReady ? 'Pair an agent in /settings.html' : 'Scan your LAN with the paired agent'"
                 class="bg-paper p-6 flex flex-col items-start gap-3 hover:bg-cream transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed">
           <span class="text-2xl" aria-hidden="true">&#128269;</span>
           <span class="font-bold text-ink">
@@ -229,10 +244,10 @@
             <span x-show="scanning" x-cloak>Scanning&hellip;</span>
           </span>
           <span class="text-xs text-text-muted leading-relaxed">
-            <template x-if="agentURL">
+            <template x-if="agentReady">
               <span>ARP + Modbus + HTTP probe across your subnet via the paired agent.</span>
             </template>
-            <template x-if="!agentURL">
+            <template x-if="!agentReady">
               <span>Requires an agent. <a href="/settings.html" class="underline text-orange-500">Pair one →</a></span>
             </template>
           </span>
@@ -343,8 +358,8 @@
       <span x-show="!savedFlash" x-cloak>autosaved</span>
     </div>
     <button @click="runTest()"
-            :disabled="!agentURL || testing || mode === 'manual'"
-            :title="mode === 'manual' ? 'Manual mode — no live device' : (!agentURL ? 'Pair an agent in /settings.html' : 'Run driver against ' + (config.host || 'device'))"
+            :disabled="!agentReady || testing || mode === 'manual'"
+            :title="mode === 'manual' ? 'Manual mode — no live device' : (!agentReady ? 'Pair an agent in /settings.html' : 'Run driver against ' + (config.host || 'device'))"
             class="border border-orange-500 text-orange-500 hover:bg-orange-500 hover:text-paper px-4 py-1.5 text-xs font-mono rounded-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
       <span x-show="!testing">&#9654; Test against device</span>
       <span x-show="testing" x-cloak>Running&hellip;</span>
@@ -428,7 +443,7 @@
           <div class="micro-label text-text-muted mb-2 flex items-center justify-between">
             <span>Probed registers</span>
             <button @click="openProbe()"
-                    :disabled="!agentURL || mode === 'manual'"
+                    :disabled="!agentReady || mode === 'manual'"
                     class="font-mono text-[11px] text-orange-500 hover:text-orange-600 normal-case tracking-normal disabled:opacity-30 disabled:cursor-not-allowed">+ Probe register</button>
           </div>
           <template x-if="!probedRegisters.length">
@@ -518,8 +533,8 @@
 
       <div class="border-t border-border-whisper flex flex-shrink-0 flex-wrap">
         <button @click="runTest()"
-                :disabled="!agentURL || testing || mode === 'manual'"
-                :title="mode === 'manual' ? 'Manual mode — no live device' : (!agentURL ? 'Pair an agent' : 'Run')"
+                :disabled="!agentReady || testing || mode === 'manual'"
+                :title="mode === 'manual' ? 'Manual mode — no live device' : (!agentReady ? 'Pair an agent' : 'Run')"
                 class="px-4 py-2 text-xs font-mono text-text-muted hover:text-orange-500 border-r border-border-whisper transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
           <span x-show="!testing">&#9654; Run</span>
           <span x-show="testing" x-cloak>Running&hellip;</span>
@@ -789,9 +804,37 @@ function driver_cleanup() end
       user: null,
 
       // Agent pairing
-      agentURL: '',
-      agentToken: '',
+      //
+      // Two pairing kinds:
+      //   - 'local'  : agentURL + agentToken (HTTP-direct against
+      //                an agent on the user's own machine).
+      //   - 'remote' : agentId + agentNatsURL + agentCreds (NATS
+      //                request/reply against the broker).
+      //
+      // localStorage is the source of truth — settings.html writes,
+      // workbench.html reads. Storage events keep tabs in sync.
+      agentKind: 'local',           // 'local' | 'remote'
+      agentURL: '',                 // local mode
+      agentToken: '',               // local mode
+      agentId: '',                  // remote mode
+      agentNatsURL: '',             // remote mode
+      agentCreds: null,             // remote mode {jwt, seed}
       agentCapabilities: [],
+
+      // Remote-mode runtime — populated lazily on first agentCall.
+      // Not persisted; reconstructed from agentCreds on every page
+      // load. agentOnline reflects 30s-windowed presence heartbeat.
+      _natsConn: null,
+      _natsConnect: null,           // in-flight promise during dial
+      _presenceUnsub: null,
+      _presenceTimer: null,
+      agentOnline: false,
+      agentPresenceTs: 0,
+
+      // agentReady is the transport-agnostic "we can issue calls"
+      // flag. UI guards bind to this instead of agentURL so remote
+      // pairings light the same buttons up.
+      agentReady: false,
 
       // Top-level
       error: null,
@@ -872,13 +915,123 @@ function driver_cleanup() end
       },
 
       refreshAgentPairing() {
-        this.agentURL = (localStorage.getItem('hugin.agent_url') || '').trim();
+        const newKind = (localStorage.getItem('hugin.agent_kind') || 'local').trim() || 'local';
+        const newURL = (localStorage.getItem('hugin.agent_url') || '').trim();
+        const newId = (localStorage.getItem('hugin.agent_id') || '').trim();
+        const newNats = (localStorage.getItem('hugin.agent_nats_url') || '').trim();
+
+        // If the identity of the paired agent changed, tear down the
+        // live NATS connection. Lazy reconnect happens on the next
+        // agentCall or presence-subscribe.
+        const identityChanged =
+          newKind !== this.agentKind ||
+          newId !== this.agentId ||
+          newNats !== this.agentNatsURL;
+        if (identityChanged) this._tearDownNats();
+
+        this.agentKind = newKind;
+        this.agentURL = newURL;
         this.agentToken = (localStorage.getItem('hugin.agent_token') || '').trim();
+        this.agentId = newId;
+        this.agentNatsURL = newNats;
+        try {
+          const raw = localStorage.getItem('hugin.agent_creds');
+          this.agentCreds = raw ? JSON.parse(raw) : null;
+          if (!this.agentCreds || !this.agentCreds.jwt || !this.agentCreds.seed) {
+            this.agentCreds = null;
+          }
+        } catch (_) { this.agentCreds = null; }
         try {
           const raw = localStorage.getItem('hugin.agent_capabilities');
           this.agentCapabilities = raw ? JSON.parse(raw) : [];
           if (!Array.isArray(this.agentCapabilities)) this.agentCapabilities = [];
         } catch (_) { this.agentCapabilities = []; }
+
+        this.agentReady =
+          (this.agentKind === 'local' && !!this.agentURL) ||
+          (this.agentKind === 'remote' && !!this.agentId && !!this.agentNatsURL && !!this.agentCreds);
+
+        // Remote-mode: dial the broker eagerly so presence heartbeats
+        // start landing. Failures fall back silently to "offline" UI —
+        // the call sites surface real errors when the user actually
+        // tries to scan / probe / run-lua.
+        if (this.agentKind === 'remote' && this.agentId && this.agentNatsURL && this.agentCreds) {
+          this._dialNats().catch((err) => {
+            console.warn('nats dial failed (will retry on next agentCall):', err);
+          });
+        }
+      },
+
+      // ===========================================================
+      // NATS TRANSPORT
+      // ===========================================================
+      // _dialNats lazy-loads nats-client.js the first time we need
+      // it, then opens a single shared connection per pairing.
+      // Concurrent callers share the in-flight dial promise instead
+      // of racing.
+      async _dialNats() {
+        if (this._natsConn) return this._natsConn;
+        if (this._natsConnect) return this._natsConnect;
+        if (!this.agentNatsURL || !this.agentCreds) {
+          throw new Error('No NATS creds for paired agent — re-pair in /settings.html.');
+        }
+        this._natsConnect = (async () => {
+          const mod = await import('/nats-client.js');
+          const conn = await mod.connect({
+            natsUrl: this.agentNatsURL,
+            creds: this.agentCreds,
+          });
+          this._natsConn = conn;
+
+          // Presence subscription — sets agentOnline + a 30s
+          // freshness timer. Each heartbeat resets the timer; a
+          // missed window flips us to offline until the next beat
+          // arrives.
+          this._presenceUnsub = conn.subscribe(
+            'agent.' + this.agentId + '.event.presence',
+            () => {
+              this.agentOnline = true;
+              this.agentPresenceTs = Date.now();
+              if (this._presenceTimer) clearTimeout(this._presenceTimer);
+              this._presenceTimer = setTimeout(() => {
+                this.agentOnline = false;
+              }, 30_000);
+            },
+          );
+
+          // Drop our online flag if the underlying connection dies.
+          conn.onState((s) => {
+            if (s === 'disconnected' || s === 'error' || s === 'closed') {
+              this.agentOnline = false;
+            }
+          });
+
+          return conn;
+        })();
+        try {
+          return await this._natsConnect;
+        } finally {
+          this._natsConnect = null;
+        }
+      },
+
+      _tearDownNats() {
+        if (this._presenceUnsub) {
+          try { this._presenceUnsub(); } catch (_) {}
+          this._presenceUnsub = null;
+        }
+        if (this._presenceTimer) {
+          clearTimeout(this._presenceTimer);
+          this._presenceTimer = null;
+        }
+        if (this._natsConn) {
+          // Fire-and-forget — close is async but we don't block
+          // pairing changes on the drain.
+          this._natsConn.close().catch(() => {});
+          this._natsConn = null;
+        }
+        this.agentOnline = false;
+        this.agentPresenceTs = 0;
       },
 
       async fetchMe() {
@@ -913,7 +1066,22 @@ function driver_cleanup() end
         }
       },
 
-      async agentFetch(path, body) {
+      // agentCall — transport-aware dispatcher.
+      //
+      // method is the unqualified operation: "scan", "probe", "run-lua",
+      // "info", "health". The dispatcher picks HTTP-direct or NATS
+      // request/reply based on agentKind. Both transports decode JSON
+      // and surface errors uniformly — call sites stay transport-agnostic.
+      async agentCall(method, body) {
+        if (this.agentKind === 'remote') {
+          return this._agentCallNATS(method, body);
+        }
+        // Local (HTTP) is the default and what every existing pairing
+        // uses today.
+        return this._agentCallHTTP('/v1/' + method, body);
+      },
+
+      async _agentCallHTTP(path, body) {
         if (!this.agentURL) throw new Error('No agent paired. Open /settings.html.');
         const resp = await this.fetchWithTimeout(this.agentURL.replace(/\/$/, '') + path, {
           method: 'POST',
@@ -937,15 +1105,49 @@ function driver_cleanup() end
         return parsed || {};
       },
 
+      async _agentCallNATS(method, body) {
+        if (!this.agentId) throw new Error('Remote agent not configured — re-pair in /settings.html.');
+        const conn = await this._dialNats();
+        const subject = 'agent.' + this.agentId + '.req.' + method;
+        // Long timeout for run-lua (matches HTTP duration_ms ceiling).
+        const timeout = method === 'run-lua' ? FETCH_TIMEOUT_MS + 30_000 : FETCH_TIMEOUT_MS;
+        let envelope;
+        try {
+          envelope = await conn.request(subject, body || {}, { timeout });
+        } catch (err) {
+          // nats.ws timeout errors are noisy; rewrite to something a
+          // user can act on. The "no responders" case fires when the
+          // agent process isn't subscribed (offline or unpaired on
+          // its side).
+          const msg = String(err && err.message || err);
+          if (/timeout/i.test(msg)) {
+            throw new Error('Agent did not respond within ' + Math.round(timeout / 1000) + 's. Is it running?');
+          }
+          if (/no responders/i.test(msg)) {
+            throw new Error('No agent listening on ' + subject + '. Re-pair or check the agent.');
+          }
+          throw err;
+        }
+        const resp = envelope.response;
+        if (resp && typeof resp === 'object' && resp.error) {
+          throw new Error(String(resp.error).slice(0, 240));
+        }
+        // run-lua wraps in {request_id, response}; unwrap if present.
+        if (resp && typeof resp === 'object' && resp.response && !resp.devices && !resp.results && !resp.emissions) {
+          return resp.response;
+        }
+        return resp || {};
+      },
+
       // ===========================================================
       // EMPTY STATE — scan / manual / drafts
       // ===========================================================
       async scanLAN() {
-        if (!this.agentURL || this.scanning) return;
+        if (!this.agentReady || this.scanning) return;
         this.error = null;
         this.scanning = true;
         try {
-          this.lastScan = await this.agentFetch('/v1/scan', {});
+          this.lastScan = await this.agentCall('scan', {});
         } catch (e) {
           this.error = 'Scan failed: ' + e.message;
         } finally {
@@ -1233,7 +1435,7 @@ function driver_cleanup() end
       // PROBE
       // ===========================================================
       openProbe() {
-        if (!this.agentURL) { this.error = 'Pair an agent in /settings.html.'; return; }
+        if (!this.agentReady) { this.error = 'Pair an agent in /settings.html.'; return; }
         if (this.mode === 'manual') return;
         this.probeError = null;
         this.probeOpen = true;
@@ -1250,7 +1452,7 @@ function driver_cleanup() end
         this.probing = true;
         this.probeError = null;
         try {
-          const result = await this.agentFetch('/v1/probe', {
+          const result = await this.agentCall('probe', {
             ip: this.config.host,
             protocol: 'modbus',
             modbus: {
@@ -1290,7 +1492,7 @@ function driver_cleanup() end
           this.error = 'Manual mode — no live device to test against. Edit, then submit as PR once it looks right.';
           return;
         }
-        if (!this.agentURL || this.testing) return;
+        if (!this.agentReady || this.testing) return;
         if (!/DRIVER\s*=\s*\{/.test(this.luaSource)) {
           this.error = 'No DRIVER block found in the editor.';
           return;
@@ -1308,7 +1510,7 @@ function driver_cleanup() end
         this.testing = true;
         try {
           const t0 = performance.now();
-          const result = await this.agentFetch('/v1/run-lua', {
+          const result = await this.agentCall('run-lua', {
             lua_source: this.luaSource,
             config: {
               host: this.config.host,
