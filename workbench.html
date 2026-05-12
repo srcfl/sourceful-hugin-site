@@ -531,14 +531,23 @@
         </div>
       </div>
 
-      <div class="border-t border-border-whisper flex flex-shrink-0 flex-wrap">
+      <div class="border-t border-border-whisper flex flex-shrink-0 flex-wrap items-center">
         <button @click="runTest()"
                 :disabled="!agentReady || testing || mode === 'manual'"
-                :title="mode === 'manual' ? 'Manual mode — no live device' : (!agentReady ? 'Pair an agent' : 'Run')"
+                :title="mode === 'manual' ? 'Manual mode — no live device' : (!agentReady ? 'Pair an agent' : 'Run for ' + runDurationSec + 's')"
                 class="px-4 py-2 text-xs font-mono text-text-muted hover:text-orange-500 border-r border-border-whisper transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-          <span x-show="!testing">&#9654; Run</span>
+          <span x-show="!testing" x-text="'▶ Run · ' + runDurationSec + 's'"></span>
           <span x-show="testing" x-cloak>Running&hellip;</span>
         </button>
+        <label class="px-3 py-2 text-[10px] font-mono text-text-muted border-r border-border-whisper flex items-center gap-2"
+               :class="testing || mode === 'manual' ? 'opacity-40' : ''"
+               title="How long to run the driver. The agent caps internally; this only affects the in-browser timer.">
+          <span>dur</span>
+          <input type="range" min="5" max="120" step="5"
+                 x-model.number="runDurationSec"
+                 :disabled="testing || mode === 'manual'"
+                 class="accent-orange-500 w-16 cursor-pointer disabled:cursor-not-allowed">
+        </label>
         <button @click="aiFixSelection()"
                 :disabled="aiBusy"
                 class="px-4 py-2 text-xs font-mono text-text-muted hover:text-orange-500 border-r border-border-whisper transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
@@ -578,12 +587,26 @@
 
       <div class="flex-1 scroll-y px-5 py-4 space-y-4">
 
-        <!-- No-runs empty state -->
-        <div x-show="!lastTest && !testing" x-cloak class="text-center py-8">
+        <!-- No-runs empty state — live mode -->
+        <div x-show="!lastTest && !testing && mode !== 'manual'" x-cloak class="text-center py-8">
           <div class="micro-label text-text-muted mb-2">No runs yet</div>
           <p class="text-xs text-text-muted leading-relaxed">
             Click <span class="text-orange-500">&#9654; Run</span> to execute the driver against
             <span x-text="config.host || 'the device'"></span>.
+          </p>
+        </div>
+
+        <!-- No-runs empty state — manual mode (no hardware to test
+             against, so Run is disabled. The user should submit
+             once the spec looks right). -->
+        <div x-show="!lastTest && !testing && mode === 'manual'" x-cloak class="text-center py-8">
+          <div class="micro-label text-text-muted mb-2">Manual mode</div>
+          <p class="text-xs text-text-muted leading-relaxed max-w-xs mx-auto">
+            No live device paired. Edit the driver until the spec looks
+            right, then use
+            <span class="text-orange-500">Submit as PR</span> to ship it.
+            Real-device testing happens after the PR lands, by a maintainer
+            with the hardware.
           </p>
         </div>
 
@@ -617,7 +640,15 @@
 
         <!-- Emissions -->
         <div x-show="lastTest?.emissions?.length" x-cloak>
-          <div class="micro-label text-text-muted mb-2">Emissions <span class="font-mono normal-case tracking-normal" x-text="'(' + (lastTest?.emissions?.length || 0) + ')'"></span></div>
+          <div class="micro-label text-text-muted mb-2 flex items-center gap-2">
+            <span>Emissions <span class="font-mono normal-case tracking-normal" x-text="'(' + (lastTest?.emissions?.length || 0) + ')'"></span></span>
+            <template x-if="lastTest?._streaming">
+              <span class="font-mono normal-case tracking-normal text-[10px] text-orange-500 flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-orange-500 inline-block animate-pulse"></span>
+                live
+              </span>
+            </template>
+          </div>
           <div class="space-y-2">
             <template x-for="(em, i) in (lastTest?.emissions || []).slice().reverse()" :key="i">
               <div class="border border-border-subtle p-2.5">
@@ -875,6 +906,11 @@ function driver_cleanup() end
       testing: false,
       lastTest: null,
       logsOpen: false,
+      // Run-lua duration, user-adjustable. The agent caps internally
+      // (5min hard timeout); we keep the UI to 5–120s as the sweet
+      // spot — long enough to see a few poll cycles, short enough
+      // that "I made a typo" isn't punished with a 2-minute wait.
+      runDurationSec: 30,
 
       // Probe modal
       probeOpen: false,
@@ -1508,8 +1544,43 @@ function driver_cleanup() end
         }
         this.error = null;
         this.testing = true;
+
+        // Stream-first lastTest. Even before the agent sends back the
+        // final buffered response, emissions/logs/metrics published on
+        // event.run-lua-progress (NATS mode) populate the Live panel.
+        // The HTTP path skips the subscribe; values appear at the end.
+        const requestId = 'wb_' + Math.random().toString(36).slice(2, 14);
+        this.lastTest = {
+          ok: null,
+          init_ok: null,
+          init_ms: 0,
+          emissions: [],
+          errors: [],
+          logs: [],
+          metrics: {},
+          ts: new Date().toISOString(),
+          _streaming: true,
+          _requestId: requestId,
+        };
+        this.mobileTab = 'live';
+
+        let unsubscribe = null;
+        if (this.agentKind === 'remote') {
+          try {
+            const conn = await this._dialNats();
+            const subject = 'agent.' + this.agentId + '.event.run-lua-progress';
+            unsubscribe = conn.subscribe(subject, (payload) => {
+              if (!payload || payload.request_id !== requestId) return;
+              this._absorbProgressEvent(payload);
+            });
+          } catch (_err) {
+            // No stream — still run the test, just lose live UX.
+          }
+        }
+
+        const durationMs = Math.max(5, Math.min(120, this.runDurationSec || 30)) * 1000;
+        const t0 = performance.now();
         try {
-          const t0 = performance.now();
           const result = await this.agentCall('run-lua', {
             lua_source: this.luaSource,
             config: {
@@ -1518,34 +1589,75 @@ function driver_cleanup() end
               slave_id: this.config.slave_id || 1,
             },
             actions: ['init', 'poll'],
-            duration_ms: 30000,
+            duration_ms: durationMs,
+            request_id: requestId,   // agent echoes this on progress events
           });
           const dt = Math.round(performance.now() - t0);
+          // Authoritative final response replaces what we streamed —
+          // the agent's buffer is the source of truth for ordering /
+          // dedupe. The stream is the appetizer; this is the meal.
           this.lastTest = {
             ok: !!result.ok,
             init_ok: result.ok !== false,
             init_ms: dt,
-            emissions: Array.isArray(result.emissions) ? result.emissions : [],
-            errors: Array.isArray(result.errors) ? result.errors : [],
-            logs: Array.isArray(result.logs) ? result.logs : [],
-            ts: new Date().toISOString(),
+            emissions: Array.isArray(result.emissions) ? result.emissions : (this.lastTest?.emissions || []),
+            errors: Array.isArray(result.errors) ? result.errors : (this.lastTest?.errors || []),
+            logs: Array.isArray(result.logs) ? result.logs : (this.lastTest?.logs || []),
+            metrics: result.metrics || this.lastTest?.metrics || {},
+            ts: this.lastTest?.ts || new Date().toISOString(),
+            _streaming: false,
           };
           this.markDirty();
         } catch (e) {
+          const dt = Math.round(performance.now() - t0);
           this.lastTest = {
             ok: false,
             init_ok: false,
-            init_ms: 0,
-            emissions: [],
-            errors: ['agent call failed: ' + e.message],
-            logs: [],
-            ts: new Date().toISOString(),
+            init_ms: dt,
+            emissions: this.lastTest?.emissions || [],
+            errors: (this.lastTest?.errors || []).concat(['agent call failed: ' + e.message]),
+            logs: this.lastTest?.logs || [],
+            metrics: this.lastTest?.metrics || {},
+            ts: this.lastTest?.ts || new Date().toISOString(),
+            _streaming: false,
           };
           this.error = 'Test failed: ' + e.message;
         } finally {
+          if (unsubscribe) {
+            try { unsubscribe(); } catch (_) {}
+          }
           this.testing = false;
           this.markDirty();
           this.mobileTab = 'live';
+        }
+      },
+
+      // _absorbProgressEvent merges one streamed event into lastTest.
+      // Called per agent.<id>.event.run-lua-progress arrival during
+      // remote-mode runs. Three event kinds map onto the three
+      // accumulators the Live panel renders.
+      _absorbProgressEvent(payload) {
+        if (!this.lastTest) return;
+        switch (payload.kind) {
+          case 'emission': {
+            const emission = {
+              ts: payload.ts,
+              channel: payload.channel,
+              data: payload.data || {},
+            };
+            this.lastTest.emissions = (this.lastTest.emissions || []).concat([emission]);
+            break;
+          }
+          case 'log': {
+            const line = (payload.level ? '[' + payload.level + '] ' : '') + (payload.message || '');
+            this.lastTest.logs = (this.lastTest.logs || []).concat([line]);
+            break;
+          }
+          case 'metric': {
+            if (!this.lastTest.metrics) this.lastTest.metrics = {};
+            if (payload.name) this.lastTest.metrics[payload.name] = payload.value;
+            break;
+          }
         }
       },
 
