@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terms — Hugin</title>
+<meta name="description" content="Terms of service for the Hugin workbench. Open-source, free during beta, use at your own risk for live energy device control.">
+
+<link href="https://api.fontshare.com/css?f[]=satoshi@300,400,500,700,900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+  :root {
+    --color-ground-paper: #0A0A0A;
+    --color-ground-cream: #161616;
+    --color-ground-ink: #F5F2E1;
+    --color-signal-orange: #E85D1F;
+    --color-signal-orange-600: #FF7A3D;
+    --color-text-near-black: #F5F2E1;
+    --color-text-muted: #9CA3AF;
+    --color-border-whisper: rgba(245, 242, 225, 0.12);
+    --color-border-subtle: rgba(245, 242, 225, 0.06);
+  }
+  html { font-family: "Satoshi", system-ui, sans-serif; background: var(--color-ground-paper); color: var(--color-text-near-black); color-scheme: dark; }
+  body { background: var(--color-ground-paper); }
+  .font-mono { font-family: "JetBrains Mono", monospace; }
+  .micro-label { font-family: "JetBrains Mono", monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+  .prose h2 { font-size: 1.5rem; font-weight: 900; margin-top: 2.5rem; margin-bottom: 0.75rem; letter-spacing: -0.01em; }
+  .prose h3 { font-size: 1rem; font-weight: 700; margin-top: 1.5rem; margin-bottom: 0.5rem; }
+  .prose p { line-height: 1.7; margin-bottom: 1rem; color: var(--color-text-muted); }
+  .prose ul { list-style: none; padding-left: 0; margin-bottom: 1rem; }
+  .prose li { padding-left: 1.25rem; position: relative; line-height: 1.7; color: var(--color-text-muted); margin-bottom: 0.5rem; }
+  .prose li::before { content: "→"; position: absolute; left: 0; color: var(--color-signal-orange); font-family: "JetBrains Mono", monospace; }
+  .prose a { color: var(--color-ground-ink); text-decoration: underline; text-decoration-color: var(--color-signal-orange); text-underline-offset: 4px; }
+  .prose a:hover { color: var(--color-signal-orange-600); }
+  .prose strong { color: var(--color-ground-ink); font-weight: 700; }
+  .prose code { font-family: "JetBrains Mono", monospace; font-size: 0.85em; color: var(--color-ground-ink); }
+  .callout { border-left: 2px solid var(--color-signal-orange); padding: 0.75rem 1rem; background: var(--color-ground-cream); margin: 1.25rem 0; }
+</style>
+
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          paper: 'var(--color-ground-paper)',
+          cream: 'var(--color-ground-cream)',
+          ink: 'var(--color-ground-ink)',
+          orange: {
+            500: 'var(--color-signal-orange)',
+            600: 'var(--color-signal-orange-600)',
+          },
+          'text-primary': 'var(--color-text-near-black)',
+          'text-muted': 'var(--color-text-muted)',
+          'border-whisper': 'var(--color-border-whisper)',
+        },
+        fontFamily: {
+          sans: '"Satoshi", system-ui, sans-serif',
+          mono: '"JetBrains Mono", monospace',
+        },
+        maxWidth: { prose: '65ch' },
+      },
+    },
+  };
+</script>
+</head>
+<body class="min-h-dvh flex flex-col bg-paper text-text-primary antialiased">
+
+<nav class="max-w-7xl mx-auto w-full px-6 py-6 flex items-center justify-between gap-4">
+  <a href="/" class="flex items-center gap-2 text-lg font-bold tracking-tight text-ink no-underline">
+    <span class="w-3 h-3 bg-orange-500 inline-block"></span>
+    Hugin
+  </a>
+  <div class="flex items-center gap-6">
+    <a href="/catalog.html" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">Catalog</a>
+    <a href="/workbench.html" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">Workbench</a>
+    <a href="https://github.com/srcfl/hugin-drivers" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">GitHub</a>
+  </div>
+</nav>
+
+<header class="max-w-3xl mx-auto w-full px-6 pt-12 pb-8">
+  <div class="micro-label text-orange-500 mb-3">Legal</div>
+  <h1 class="text-4xl md:text-6xl font-black tracking-tight leading-[1.05]">
+    Terms.
+  </h1>
+  <p class="mt-6 text-base text-text-muted max-w-prose leading-relaxed">
+    Free during beta. MIT everywhere. No warranty for live device
+    control. Sweden jurisdiction. Plain English first, legal second.
+  </p>
+  <p class="mt-3 font-mono text-xs text-text-muted">Last updated 2026-05-12.</p>
+</header>
+
+<main class="max-w-3xl mx-auto w-full px-6 pb-24 prose">
+
+  <h2>What Hugin is</h2>
+  <p>
+    Hugin is a workbench for writing open-source drivers for energy
+    devices over Modbus, MQTT, and HTTP. The workbench, the
+    <a href="https://github.com/srcfl/hugin-agent">agent</a>, the
+    <a href="https://github.com/srcfl/sourceful-hugin">API</a>, and the
+    <a href="https://github.com/srcfl/hugin-drivers">driver library</a>
+    are all open source under MIT. Drivers you submit land in a public
+    GitHub repository under your GitHub identity.
+  </p>
+
+  <h2>What you can expect from us</h2>
+  <ul>
+    <li>The workbench, agent, and driver library are <strong>free to use</strong>. No paywall, no per-seat licensing.</li>
+    <li>We pay the AI inference bill. AI usage may be rate-limited or quota-gated; we will be transparent about limits and post them in the workbench.</li>
+    <li>We will not mine your driver work or anything the agent sees on your network. The architecture is designed so we <em>can't</em> — see the <a href="/privacy.html">Privacy</a> page.</li>
+    <li>We will not change the MIT license on drivers, the agent, or the workbench. Open is the point.</li>
+    <li>We make no commercial guarantees about availability or response time during beta. Best-effort.</li>
+  </ul>
+
+  <h2>What we expect from you</h2>
+  <ul>
+    <li><strong>Use it on devices you own or have permission to test.</strong> Hugin is not a pen-testing tool. Don't sweep networks or probe Modbus on infrastructure you don't control.</li>
+    <li><strong>Don't try to escape the Lua sandbox</strong>, abuse the AI quota, or otherwise exploit the system. We will revoke pairing tokens for abuse without warning.</li>
+    <li><strong>Drivers you submit must be MIT-licensable.</strong> Don't copy-paste proprietary vendor SDKs or NDA'd register maps. If a register map came from a vendor manual, that's fine — those are reference docs.</li>
+    <li><strong>One pairing, one human.</strong> Don't share your GitHub OAuth session.</li>
+  </ul>
+
+  <h2>Safety + liability</h2>
+  <div class="callout">
+    <p style="color: var(--color-ground-ink); margin: 0;">
+      <strong>Hugin is provided as-is, without warranty.</strong> Energy
+      devices can be expensive and physical safety-critical. A buggy
+      driver can damage hardware, trip protection, or corrupt grid
+      registers. <strong>Test on disposable hardware first.</strong>
+    </p>
+  </div>
+  <p>
+    Sourceful and any contributor to the open-source repositories are
+    not liable for damage caused by drivers authored with Hugin —
+    whether the driver was written by you, by another contributor, or
+    drafted by AI. This applies to physical damage, lost generation,
+    spoiled batteries, false billing, and downstream control system
+    misbehaviour.
+  </p>
+  <p>
+    Some jurisdictions don't allow disclaimers this broad. Where that's
+    the case, our liability is limited to the minimum permitted by law,
+    capped at one euro.
+  </p>
+
+  <h2>Acceptable use</h2>
+  <p>You agree not to use Hugin to:</p>
+  <ul>
+    <li>Attack, scan, or interfere with devices, networks, or infrastructure you don't own or have explicit permission to test.</li>
+    <li>Harvest credentials, register maps, or driver source from devices you can't authorize.</li>
+    <li>Reverse-engineer or weaponize the platform itself (the workbench, agent, API, or broker).</li>
+    <li>Submit drivers that knowingly violate device safety limits or local regulations.</li>
+  </ul>
+
+  <h2>Termination</h2>
+  <p>
+    You can stop using Hugin at any time — revoke the GitHub OAuth scope
+    at <a href="https://github.com/settings/applications">github.com/settings/applications</a>
+    to disconnect cleanly. We can revoke pairing tokens and NATS
+    credentials at any time for terms violations or abuse, without
+    refund (there's nothing to refund).
+  </p>
+  <p>
+    Driver PRs you've already merged into <code>srcfl/hugin-drivers</code>
+    remain there under their original MIT licence — termination doesn't
+    retroactively unpublish your contributions.
+  </p>
+
+  <h2>Jurisdiction</h2>
+  <p>
+    These terms are governed by Swedish law. Disputes are resolved by the
+    Stockholm District Court (<em>Stockholms tingsrätt</em>).
+  </p>
+
+  <h2>Changes</h2>
+  <p>
+    We may update these terms. Material changes get a banner on the
+    workbench for 30 days and update the timestamp above. Continued use
+    after a material change means you accept the new terms.
+  </p>
+
+  <h2>Contact</h2>
+  <p>
+    Sourceful Energy AB, Stockholm, Sweden.
+    Email <a href="mailto:legal@sourceful.energy">legal@sourceful.energy</a>
+    for legal questions; bugs go on <a href="https://github.com/srcfl/sourceful-hugin/issues">GitHub Issues</a>.
+  </p>
+
+</main>
+
+<footer class="mt-auto border-t border-border-whisper">
+  <div class="max-w-7xl mx-auto w-full px-6 py-8 flex flex-wrap justify-between gap-4 text-sm text-text-muted">
+    <div>
+      <span class="font-bold text-ink">Hugin</span> · made by
+      <a href="https://sourceful.energy" class="text-text-muted hover:text-ink no-underline">Sourceful</a>
+    </div>
+    <div class="flex gap-4">
+      <a href="/privacy.html" class="hover:text-ink no-underline">Privacy</a>
+      <a href="/terms.html" class="hover:text-ink no-underline">Terms</a>
+      <a href="https://github.com/srcfl/hugin-drivers" class="hover:text-ink no-underline">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
