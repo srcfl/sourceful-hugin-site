@@ -669,6 +669,21 @@
           </div>
         </div>
 
+        <!-- Metrics — driver-emitted gauges/counters via
+             host.emit_metric. Renders as a simple two-column table
+             when the driver published any. -->
+        <div x-show="lastTest?.metrics && Object.keys(lastTest.metrics).length" x-cloak>
+          <div class="micro-label text-text-muted mb-2">Metrics</div>
+          <div class="border border-border-whisper bg-cream p-3 font-mono text-[11px]">
+            <template x-for="[name, value] in Object.entries(lastTest?.metrics || {})" :key="name">
+              <div class="flex justify-between gap-3 py-0.5">
+                <span class="text-text-muted truncate" x-text="name"></span>
+                <span class="text-ink shrink-0" x-text="value"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+
         <!-- Logs -->
         <div x-show="lastTest?.logs?.length" x-cloak>
           <button @click="logsOpen = !logsOpen"
@@ -712,6 +727,13 @@
         <span class="micro-label text-text-muted">Address (decimal or 0x…)</span>
         <input x-model="probe.addrInput" type="text" placeholder="0x4000"
                class="mt-1 w-full bg-transparent text-sm font-mono text-ink py-2 px-2 border border-border-whisper focus:border-orange-500 focus:outline-none focus:ring-0" />
+        <!-- Live parse preview. Empty input is silent; valid input
+             shows decimal + hex + the resulting register range;
+             invalid input shows a red warning. Catches typos
+             before the user pays the round-trip cost. -->
+        <p class="mt-1 text-[11px] font-mono break-words"
+           :class="probePreview().ok ? 'text-text-muted' : (probe.addrInput ? 'text-destructive-red' : 'text-text-muted')"
+           x-text="probePreview().label"></p>
       </label>
       <div class="grid grid-cols-2 gap-3">
         <label class="block">
@@ -1429,7 +1451,7 @@ DRIVER = {
   tested_models = {},
   verification_status = "experimental",
   verification_notes = "Drafted via Hugin workbench; not yet verified on live hardware.",
-  description = "TODO: one-sentence purpose.",
+  description = "Modbus driver for ${make} ${model}.",
   connection_defaults = { port = 502, slave_id = 1 },
 }
 
@@ -1441,7 +1463,9 @@ function driver_init(config)
 end
 
 function driver_poll()
-  -- TODO: read registers, host.emit("meter", {...})
+  -- Replace with actual register reads, e.g.:
+  --   local power = host.modbus_read(0x4000, 2, "i32_be")
+  --   host.emit("meter", { power_w = power })
   return 5000
 end
 
@@ -1477,12 +1501,40 @@ function driver_cleanup() end
         this.probeOpen = true;
       },
 
+      // _parseRegAddr is the single source of truth for "what
+      // address did the user type?". Used by the live preview AND
+      // by runProbe to stay in lock-step.
+      _parseRegAddr(raw) {
+        const s = (raw || '').trim();
+        if (!s) return { ok: false, addr: null, reason: 'empty' };
+        let n;
+        if (/^0x[0-9a-f]+$/i.test(s)) n = parseInt(s, 16);
+        else if (/^[0-9]+$/.test(s)) n = parseInt(s, 10);
+        else return { ok: false, addr: null, reason: 'not a number — use decimal or 0x…' };
+        if (!Number.isFinite(n)) return { ok: false, addr: null, reason: 'not a number — use decimal or 0x…' };
+        if (n < 0 || n > 0xFFFF) return { ok: false, addr: null, reason: 'out of Modbus 16-bit range (0–65535)' };
+        return { ok: true, addr: n, reason: null };
+      },
+
+      probePreview() {
+        const parsed = this._parseRegAddr(this.probe.addrInput);
+        if (!parsed.ok) {
+          return { ok: false, label: this.probe.addrInput ? parsed.reason : 'decimal (e.g. 16384) or hex (e.g. 0x4000)' };
+        }
+        const count = Math.max(1, Math.min(125, this.probe.count || 2));
+        const last = parsed.addr + count - 1;
+        const hex = '0x' + parsed.addr.toString(16).toUpperCase().padStart(4, '0');
+        return {
+          ok: true,
+          label: parsed.addr + ' (' + hex + ') · ' + count + ' regs → up to ' +
+                 last + ' (0x' + last.toString(16).toUpperCase().padStart(4, '0') + ')',
+        };
+      },
+
       async runProbe() {
-        const raw = (this.probe.addrInput || '').trim();
-        let addr;
-        if (/^0x/i.test(raw)) addr = parseInt(raw, 16);
-        else addr = parseInt(raw, 10);
-        if (!Number.isFinite(addr)) { this.probeError = 'Address must be a number (decimal or 0x…).'; return; }
+        const parsed = this._parseRegAddr(this.probe.addrInput);
+        if (!parsed.ok) { this.probeError = parsed.reason || 'Invalid address.'; return; }
+        const addr = parsed.addr;
         if (!this.config.host) { this.probeError = 'Set a host on the connection form first.'; return; }
 
         this.probing = true;
