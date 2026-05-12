@@ -151,7 +151,7 @@
         </button>
 
         <button @click="clearPairing()"
-                x-show="paired.url"
+                x-show="paired.kind"
                 x-cloak
                 class="text-sm font-medium text-text-muted hover:text-destructive-red transition-colors">
           Clear pairing
@@ -207,16 +207,59 @@
   </div>
 </section>
 
+<!-- =========================================================
+     Pair a REMOTE agent (cloud-relayed via NATS).
+     ========================================================= -->
+<section class="max-w-3xl mx-auto w-full px-6 pb-12">
+  <div class="border border-border-whisper bg-paper p-6 md:p-8">
+
+    <div class="micro-label text-text-muted mb-4">…or pair a remote agent</div>
+
+    <p class="text-sm text-text-muted leading-relaxed mb-5 max-w-prose">
+      For agents that don't live on your laptop: register through
+      Sourceful's NATS broker. The workbench connects over WSS, your
+      agent stays on its own network. No port-forwarding, no inbound
+      firewall holes.
+    </p>
+
+    <div class="flex flex-wrap items-center gap-3">
+      <button @click="pairRemote()"
+              :disabled="!ghTokenPresent || remotePairing"
+              class="bg-ink text-paper px-5 py-2.5 text-sm font-medium rounded-none hover:bg-orange-500 hover:text-paper transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+        <span x-show="!remotePairing">Pair via GitHub</span>
+        <span x-show="remotePairing" x-cloak>Connecting…</span>
+      </button>
+
+      <template x-if="!ghTokenPresent">
+        <a href="/workbench.html" class="text-xs font-mono text-text-muted hover:text-ink no-underline">
+          Sign in on the workbench first →
+        </a>
+      </template>
+
+      <template x-if="ghTokenPresent">
+        <span class="text-xs font-mono text-text-muted">
+          Mints a 30-day NATS credential under your GitHub login.
+        </span>
+      </template>
+    </div>
+
+    <div x-show="remoteError" x-cloak class="mt-4 border border-destructive-red/50 bg-destructive-red/5 p-4">
+      <div class="micro-label text-destructive-red mb-1">Error</div>
+      <div class="font-mono text-xs text-destructive-red break-words" x-text="remoteError"></div>
+    </div>
+  </div>
+</section>
+
 <!-- Status panel -->
 <section class="max-w-3xl mx-auto w-full px-6 pb-12">
   <div class="micro-label text-text-muted mb-3">Status</div>
   <div class="border border-border-whisper bg-cream p-5 flex flex-wrap items-center gap-x-6 gap-y-3">
-    <template x-if="paired.url">
+    <template x-if="paired.kind === 'local'">
       <div class="flex items-center gap-3 flex-1 min-w-0">
         <span class="status-dot green flex-shrink-0"></span>
         <div class="min-w-0">
           <div class="text-sm">
-            Connected to <span class="font-mono text-ink break-all" x-text="paired.url"></span>
+            Local agent at <span class="font-mono text-ink break-all" x-text="paired.url"></span>
           </div>
           <div class="mt-1 flex flex-wrap gap-1.5">
             <template x-for="c in paired.capabilities" :key="c">
@@ -227,7 +270,26 @@
         </div>
       </div>
     </template>
-    <template x-if="!paired.url">
+
+    <template x-if="paired.kind === 'remote'">
+      <div class="flex items-center gap-3 flex-1 min-w-0">
+        <span class="status-dot green flex-shrink-0"></span>
+        <div class="min-w-0">
+          <div class="text-sm">
+            Remote agent <span class="font-mono text-ink break-all" x-text="paired.agentId"></span>
+          </div>
+          <div class="text-xs text-text-muted font-mono break-all mt-0.5" x-text="paired.natsUrl"></div>
+          <div class="mt-1 flex flex-wrap gap-1.5">
+            <template x-for="c in paired.capabilities" :key="c">
+              <span class="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 border border-border-whisper text-text-muted" x-text="c"></span>
+            </template>
+            <span x-show="!paired.capabilities?.length" class="text-[10px] font-mono uppercase tracking-wider text-text-muted">capabilities unknown</span>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <template x-if="!paired.kind">
       <div class="flex items-center gap-3">
         <span class="status-dot orange"></span>
         <span class="text-sm text-text-muted">No agent paired. The web app runs in browser-only mode.</span>
@@ -294,10 +356,31 @@
 
 <script>
   // localStorage contract — these exact keys are read by workbench.html and
-  // any sibling page that wants to talk to the local agent.
-  const LS_URL  = 'hugin.agent_url';
-  const LS_TOK  = 'hugin.agent_token';
-  const LS_CAPS = 'hugin.agent_capabilities';
+  // any sibling page that wants to talk to a paired agent.
+  //
+  // Local-mode keys:
+  //   hugin.agent_url           HTTP base
+  //   hugin.agent_token         HTTP bearer
+  //   hugin.agent_capabilities  JSON array (set in both modes)
+  //
+  // Remote-mode keys:
+  //   hugin.agent_id            NATS agent id
+  //   hugin.agent_nats_url      wss:// URL
+  //   hugin.agent_creds         {jwt, seed} JSON
+  //
+  // Shared:
+  //   hugin.agent_kind          'local' | 'remote'
+  //   hugin.gh_token            GitHub OAuth token (workbench-owned)
+  const LS_URL       = 'hugin.agent_url';
+  const LS_TOK       = 'hugin.agent_token';
+  const LS_CAPS      = 'hugin.agent_capabilities';
+  const LS_KIND      = 'hugin.agent_kind';
+  const LS_AGENT_ID  = 'hugin.agent_id';
+  const LS_NATS_URL  = 'hugin.agent_nats_url';
+  const LS_CREDS     = 'hugin.agent_creds';
+  const LS_GH_TOKEN  = 'hugin.gh_token';
+
+  const API_BASE = 'https://api.hugin.sourceful-labs.net';
 
   function settings() {
     return {
@@ -307,24 +390,34 @@
       testResult: { ok: false, info: null },
       error: null,
       savedFlash: false,
-      paired: { url: null, token: null, capabilities: [] },
+      // paired tracks whichever mode is currently active. `kind` drives
+      // the Status panel + which keys are populated.
+      paired: {
+        kind: null,           // 'local' | 'remote' | null
+        url: null,            // local
+        token: null,          // local
+        agentId: null,        // remote
+        natsUrl: null,        // remote
+        capabilities: [],
+      },
       // When true, a successful Test should auto-Save and redirect. Set only
       // by the agent-handoff fragment path so manual pasting still requires
       // explicit clicks.
       autoPair: false,
 
+      // Remote-mode state.
+      remotePairing: false,        // button busy spinner
+      remoteError: null,
+      ghTokenPresent: false,       // gates the Connect button
+
       init() {
         // Hydrate from localStorage so the form pre-fills if already paired.
-        const url = localStorage.getItem(LS_URL);
-        const tok = localStorage.getItem(LS_TOK);
-        let caps = [];
-        try { caps = JSON.parse(localStorage.getItem(LS_CAPS) || '[]'); }
-        catch (_) { caps = []; }
+        this.ghTokenPresent = !!localStorage.getItem(LS_GH_TOKEN);
+        this.refreshPaired();
 
-        if (url) {
-          this.paired = { url, token: tok, capabilities: caps };
-          this.form.url = url;
-          this.form.token = tok || '';
+        if (this.paired.kind === 'local') {
+          this.form.url = this.paired.url || '';
+          this.form.token = this.paired.token || '';
         }
 
         // Hand-off from `hugin-agent` itself: when the agent boots it
@@ -352,6 +445,41 @@
             this.$nextTick(() => this.testConnection());
           }
         }
+      },
+
+      // refreshPaired reads localStorage into the reactive paired
+      // object. Called on init + after every save/clear so the
+      // Status panel always reflects what sibling pages will see.
+      refreshPaired() {
+        const kind = localStorage.getItem(LS_KIND);
+        let caps = [];
+        try { caps = JSON.parse(localStorage.getItem(LS_CAPS) || '[]'); }
+        catch (_) { caps = []; }
+
+        if (kind === 'remote' && localStorage.getItem(LS_AGENT_ID)) {
+          this.paired = {
+            kind: 'remote',
+            url: null,
+            token: null,
+            agentId: localStorage.getItem(LS_AGENT_ID),
+            natsUrl: localStorage.getItem(LS_NATS_URL),
+            capabilities: caps,
+          };
+          return;
+        }
+        const url = localStorage.getItem(LS_URL);
+        if (url) {
+          this.paired = {
+            kind: 'local',
+            url,
+            token: localStorage.getItem(LS_TOK),
+            agentId: null,
+            natsUrl: null,
+            capabilities: caps,
+          };
+          return;
+        }
+        this.paired = { kind: null, url: null, token: null, agentId: null, natsUrl: null, capabilities: [] };
       },
 
       // Strip trailing slash so '/v1/info' doesn't double up.
@@ -450,12 +578,20 @@
 
           // Health passed — persist. Capabilities come from the earlier
           // /v1/info probe; sibling pages read this array verbatim.
+          //
+          // We also flip kind to 'local' and wipe any remote-mode keys
+          // so the two pairings stay mutually exclusive (workbench
+          // dispatches on kind).
           const caps = this.testResult.info?.capabilities || [];
           localStorage.setItem(LS_URL, base);
           localStorage.setItem(LS_TOK, token);
           localStorage.setItem(LS_CAPS, JSON.stringify(caps));
+          localStorage.setItem(LS_KIND, 'local');
+          localStorage.removeItem(LS_AGENT_ID);
+          localStorage.removeItem(LS_NATS_URL);
+          localStorage.removeItem(LS_CREDS);
 
-          this.paired = { url: base, token, capabilities: caps };
+          this.refreshPaired();
           this.savedFlash = true;
 
           // If Save was kicked off by the auto-pair flow, send the user
@@ -479,14 +615,95 @@
       },
 
       clearPairing() {
-        localStorage.removeItem(LS_URL);
-        localStorage.removeItem(LS_TOK);
-        localStorage.removeItem(LS_CAPS);
-        this.paired = { url: null, token: null, capabilities: [] };
+        // Wipe BOTH modes — keeping only one paired at a time is the
+        // contract.
+        for (const k of [LS_URL, LS_TOK, LS_CAPS, LS_KIND, LS_AGENT_ID, LS_NATS_URL, LS_CREDS]) {
+          localStorage.removeItem(k);
+        }
+        this.refreshPaired();
         this.form = { url: '', token: '' };
         this.testResult = { ok: false, info: null };
         this.error = null;
+        this.remoteError = null;
         this.savedFlash = false;
+      },
+
+      // pairRemote — connect a cloud-relayed (NATS) agent.
+      //
+      // Steps:
+      //   1. Take the GitHub OAuth token already in localStorage (set by
+      //      the workbench sign-in). Bail if absent — user signs in on
+      //      the workbench first.
+      //   2. POST /v1/agents/register → fresh agent_id + nats_url +
+      //      user JWT + user_seed (30-day TTL on the JWT).
+      //   3. Open a WSS NATS connection with those creds and send a
+      //      req.info to fetch the agent's actual capabilities. Falls
+      //      back to a sensible default if the agent isn't online yet.
+      //   4. Persist to localStorage with kind='remote' and clear the
+      //      local-mode keys.
+      //
+      // nats-client.js is loaded lazily so users on the local-only path
+      // don't pay the CDN cost.
+      async pairRemote() {
+        if (this.remotePairing) return;
+        const ghToken = (localStorage.getItem(LS_GH_TOKEN) || '').trim();
+        if (!ghToken) {
+          this.remoteError = 'Sign in on the workbench first — Hugin needs a GitHub token to mint NATS credentials.';
+          return;
+        }
+
+        this.remotePairing = true;
+        this.remoteError = null;
+        this.savedFlash = false;
+
+        let conn = null;
+        try {
+          const mod = await import('/nats-client.js');
+          const { natsUrl, agentId, creds } = await mod.fetchAgentCreds(API_BASE, ghToken);
+          if (!natsUrl || !agentId || !creds?.jwt || !creds?.seed) {
+            throw new Error('register returned incomplete credentials');
+          }
+
+          // Probe req.info so the saved capabilities are real, not
+          // a hardcoded guess. Short timeout because the agent might
+          // not be online yet — that's fine, we'll re-probe later.
+          let caps = ['scan', 'probe', 'run-lua'];
+          try {
+            conn = await mod.connect({ natsUrl, creds });
+            const { response } = await conn.request(
+              `agent.${agentId}.req.info`,
+              {},
+              { timeout: 5_000 },
+            );
+            if (Array.isArray(response?.capabilities) && response.capabilities.length) {
+              caps = response.capabilities;
+            }
+          } catch (_probeErr) {
+            // Agent offline; keep the default capabilities. The
+            // workbench will reflect "remote (offline)" until the
+            // agent comes online.
+          }
+
+          // Persist + flip kind to 'remote'. Clear local-mode keys so
+          // the two pairings stay mutually exclusive.
+          localStorage.setItem(LS_KIND, 'remote');
+          localStorage.setItem(LS_AGENT_ID, agentId);
+          localStorage.setItem(LS_NATS_URL, natsUrl);
+          localStorage.setItem(LS_CREDS, JSON.stringify(creds));
+          localStorage.setItem(LS_CAPS, JSON.stringify(caps));
+          localStorage.removeItem(LS_URL);
+          localStorage.removeItem(LS_TOK);
+
+          this.refreshPaired();
+          this.savedFlash = true;
+        } catch (e) {
+          this.remoteError = e?.message || String(e);
+        } finally {
+          if (conn) {
+            try { await conn.close(); } catch (_) {}
+          }
+          this.remotePairing = false;
+        }
       },
     };
   }
