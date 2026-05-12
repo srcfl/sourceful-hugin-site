@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Docs — Hugin</title>
+<meta name="description" content="Quickstart, driver authoring guide, and operations notes for Hugin.">
+
+<link href="https://api.fontshare.com/css?f[]=satoshi@300,400,500,700,900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="/docs/docs.css" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+  :root {
+    --color-ground-paper: #0A0A0A;
+    --color-ground-cream: #161616;
+    --color-ground-ink: #F5F2E1;
+    --color-signal-orange: #E85D1F;
+    --color-signal-orange-600: #FF7A3D;
+    --color-text-near-black: #F5F2E1;
+    --color-text-muted: #9CA3AF;
+    --color-border-whisper: rgba(245, 242, 225, 0.12);
+    --color-border-subtle: rgba(245, 242, 225, 0.06);
+  }
+  html { font-family: "Satoshi", system-ui, sans-serif; background: var(--color-ground-paper); color: var(--color-text-near-black); color-scheme: dark; }
+  body { background: var(--color-ground-paper); }
+  .font-mono { font-family: "JetBrains Mono", monospace; }
+  .micro-label { font-family: "JetBrains Mono", monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+</style>
+<script>
+  tailwind.config = { theme: { extend: { colors: {
+    paper:'var(--color-ground-paper)', cream:'var(--color-ground-cream)', ink:'var(--color-ground-ink)',
+    orange: { 500:'var(--color-signal-orange)', 600:'var(--color-signal-orange-600)' },
+    'text-muted':'var(--color-text-muted)', 'border-whisper':'var(--color-border-whisper)',
+  }}}};
+</script>
+</head>
+<body class="min-h-dvh flex flex-col bg-paper text-text-primary antialiased">
+
+<nav class="max-w-7xl mx-auto w-full px-6 py-6 flex items-center justify-between gap-4">
+  <a href="/" class="flex items-center gap-2 text-lg font-bold tracking-tight text-ink no-underline">
+    <span class="w-3 h-3 bg-orange-500 inline-block"></span> Hugin
+  </a>
+  <div class="flex items-center gap-6">
+    <a href="/docs/" class="hidden sm:inline text-sm font-medium text-orange-500 transition-colors no-underline">Docs</a>
+    <a href="/catalog.html" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">Catalog</a>
+    <a href="/workbench.html" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">Workbench</a>
+    <a href="https://github.com/srcfl/hugin-drivers" class="hidden sm:inline text-sm font-medium text-text-muted hover:text-ink transition-colors no-underline">GitHub</a>
+  </div>
+</nav>
+
+<div class="docs-layout">
+  <aside class="docs-sidebar">
+    <h4>Docs</h4>
+    <a href="/docs/" class="active">Quickstart</a>
+    <a href="/docs/authoring.html">Authoring drivers</a>
+    <a href="/docs/operating.html">Self-hosting + ops</a>
+    <h4 style="margin-top: 2rem;">External</h4>
+    <a href="https://github.com/srcfl/hugin-agent">hugin-agent ↗</a>
+    <a href="https://github.com/srcfl/hugin-drivers">hugin-drivers ↗</a>
+    <a href="https://github.com/srcfl/sourceful-hugin">hugin-api ↗</a>
+  </aside>
+
+  <main class="docs-content">
+
+    <h1>Quickstart</h1>
+    <p class="lede">
+      From "never heard of Hugin" to "PR submitted" in roughly five
+      minutes, assuming you have a Modbus device on your network you
+      want to write a driver for.
+    </p>
+
+    <h2>Prerequisites</h2>
+    <ul>
+      <li>A device that speaks Modbus TCP, MQTT, or HTTP. Most modern inverters, batteries, EV chargers, and smart meters qualify.</li>
+      <li>The device on the same LAN as the machine where you'll run the agent. (Or somewhere reachable from it.)</li>
+      <li>A GitHub account. The workbench signs in with GitHub so PRs land in your name.</li>
+      <li>One of: macOS with <a href="https://brew.sh">Homebrew</a>, Windows with <a href="https://scoop.sh">Scoop</a>, or Linux + Go 1.25+.</li>
+    </ul>
+
+    <h2>1. Sign in to the workbench</h2>
+    <p>
+      Open <a href="https://hugin.sourceful-labs.net/workbench.html">hugin.sourceful-labs.net/workbench.html</a>
+      and sign in with GitHub. The OAuth scope is <code>public_repo</code>
+      only — used to fork <code>srcfl/hugin-drivers</code> and open a PR
+      in your name. Sourceful never reads your private repos.
+    </p>
+
+    <h2>2. Install the agent</h2>
+    <p>
+      The agent is a 12 MB Go binary. It listens on
+      <code>localhost:19090</code> and gives the browser real LAN access
+      — Modbus, ARP, HTTP probes, Lua sandbox. Pick one install path:
+    </p>
+
+    <h3>macOS / Linux — Homebrew</h3>
+<pre><code>brew install srcfl/tap/hugin-agent
+hugin-agent</code></pre>
+
+    <h3>Windows — Scoop</h3>
+<pre><code>scoop bucket add srcfl https://github.com/srcfl/scoop-bucket
+scoop install hugin-agent
+hugin-agent</code></pre>
+
+    <h3>From source</h3>
+<pre><code>go install github.com/srcfl/hugin-agent/cmd/hugin-agent@latest
+hugin-agent</code></pre>
+
+    <p>
+      First run prints a pairing URL and auto-opens your browser to
+      <code>/settings.html#agent_url=…&amp;token=…</code>. Click <em>Save
+      pairing</em>; the workbench takes it from there.
+    </p>
+
+    <div class="callout">
+      <p>
+        <strong>Pairing without copy-paste.</strong> The agent's deep-link
+        fragment carries the URL + token. Settings.html ingests them
+        directly and never sends them to a server — your token stays in
+        your browser's <code>localStorage</code>.
+      </p>
+    </div>
+
+    <h2>3. Pick a device</h2>
+    <p>
+      On the workbench's empty state, click <em>Scan my LAN</em>. The
+      agent sweeps your subnet via ARP + Modbus FC43 + HTTP banner-grab
+      and shows everything it found. Pick the row that matches the
+      device you're targeting.
+    </p>
+    <p>
+      If your device isn't on this LAN (or the scan can't reach it),
+      use <em>Paste device specs / manual</em> instead — drop in a
+      register list or a vendor manual snippet and the AI starts from
+      there.
+    </p>
+
+    <h2>4. Probe a register</h2>
+    <p>
+      Click <em>Probe register</em>. Type an address (decimal or
+      <code>0x4000</code>), pick a decode kind (<code>i32_be</code>,
+      <code>u16</code>, etc.), and hit <em>Probe</em>. The agent runs a
+      single Modbus FC03 read and shows you the raw bytes + decoded
+      value. Probed values are <strong>ground truth</strong> — they
+      override anything the AI assumes.
+    </p>
+
+    <h2>5. Let AI draft the driver</h2>
+    <p>
+      Click <em>AI: Generate from probed</em>. Claude reads the device
+      info + probed register values + the
+      <a href="/docs/authoring.html">authoring guide</a>'s sign
+      conventions and outputs a complete Lua driver in the editor.
+      Inspect it, tweak it.
+    </p>
+
+    <h2>6. Test against the device</h2>
+    <p>
+      Adjust the duration slider (5–120s) and hit <em>▶ Run</em>. The
+      agent loads your Lua into a sandbox and runs <code>driver_init</code>
+      followed by <code>driver_poll</code> in a loop. Emissions stream
+      into the Live panel as they fire — no waiting for buffered
+      output if you're paired in remote (NATS) mode.
+    </p>
+
+    <h2>7. Submit as PR</h2>
+    <p>
+      When the Live panel looks right, click <em>Submit as PR</em>. The
+      workbench forks <code>srcfl/hugin-drivers</code> to your account
+      (if not already), commits the Lua file, and opens a PR with
+      your name on the commit. Maintainers review and merge.
+    </p>
+
+    <h2>Where to go next</h2>
+    <ul>
+      <li><a href="/docs/authoring.html">Authoring drivers</a> — DRIVER table fields, host API reference, sign conventions, common pitfalls.</li>
+      <li><a href="/docs/operating.html">Self-hosting + ops</a> — env vars, broker setup, running your own catalog API.</li>
+      <li><a href="/catalog.html">Catalog</a> — see the drivers others have written. Forks-with-credit, not copy-paste.</li>
+    </ul>
+  </main>
+</div>
+
+<footer class="mt-auto border-t border-border-whisper">
+  <div class="max-w-7xl mx-auto w-full px-6 py-8 flex flex-wrap justify-between gap-4 text-sm text-text-muted">
+    <div>
+      <span class="font-bold text-ink">Hugin</span> · made by
+      <a href="https://sourceful.energy" class="text-text-muted hover:text-ink no-underline">Sourceful</a>
+    </div>
+    <div class="flex gap-4">
+      <a href="/privacy.html" class="hover:text-ink no-underline">Privacy</a>
+      <a href="/terms.html" class="hover:text-ink no-underline">Terms</a>
+      <a href="https://github.com/srcfl/hugin-drivers" class="hover:text-ink no-underline">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

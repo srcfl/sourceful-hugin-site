@@ -1,0 +1,207 @@
+/* docs.css — shared styles for /docs/* pages.
+ *
+ * Layered on top of the Magrathea tokens declared inline in each
+ * page so the markup keeps working when served standalone (no
+ * external-CSS dependency for the design tokens).
+ */
+
+.docs-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2rem;
+  max-width: 80rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+@media (min-width: 768px) {
+  .docs-layout {
+    grid-template-columns: 14rem 1fr;
+    gap: 3rem;
+    padding-top: 3rem;
+  }
+}
+
+.docs-sidebar {
+  position: sticky;
+  top: 2rem;
+  align-self: start;
+}
+
+.docs-sidebar h4 {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin-bottom: 0.75rem;
+}
+
+.docs-sidebar a {
+  display: block;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  padding: 0.4rem 0;
+  font-size: 0.9rem;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.docs-sidebar a:hover {
+  color: var(--color-ground-ink);
+}
+.docs-sidebar a.active {
+  color: var(--color-signal-orange);
+  border-bottom-color: var(--color-signal-orange);
+}
+
+.docs-content { min-width: 0; max-width: 56rem; }
+
+.docs-content h1 {
+  font-size: 2.5rem;
+  line-height: 1.05;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.5rem;
+}
+@media (min-width: 768px) {
+  .docs-content h1 { font-size: 3.5rem; }
+}
+.docs-content > p.lede {
+  font-size: 1.1rem;
+  color: var(--color-text-muted);
+  line-height: 1.6;
+  max-width: 65ch;
+  margin-bottom: 2.5rem;
+}
+
+.docs-content h2 {
+  font-size: 1.5rem;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  margin-top: 3rem;
+  margin-bottom: 0.75rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--color-border-whisper);
+}
+.docs-content h2:first-of-type {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+.docs-content h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-top: 1.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.docs-content p {
+  line-height: 1.7;
+  color: var(--color-text-muted);
+  margin-bottom: 1rem;
+  max-width: 65ch;
+}
+
+.docs-content ul, .docs-content ol {
+  list-style: none;
+  padding-left: 0;
+  margin-bottom: 1rem;
+  max-width: 65ch;
+}
+.docs-content li {
+  padding-left: 1.25rem;
+  position: relative;
+  line-height: 1.7;
+  color: var(--color-text-muted);
+  margin-bottom: 0.4rem;
+}
+.docs-content ul > li::before {
+  content: "→";
+  position: absolute;
+  left: 0;
+  color: var(--color-signal-orange);
+  font-family: "JetBrains Mono", monospace;
+}
+.docs-content ol { counter-reset: step; }
+.docs-content ol > li {
+  counter-increment: step;
+}
+.docs-content ol > li::before {
+  content: counter(step, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  color: var(--color-signal-orange);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.85em;
+  letter-spacing: 0.05em;
+  padding-right: 0.5rem;
+}
+.docs-content ol > li { padding-left: 2.25rem; }
+
+.docs-content a {
+  color: var(--color-ground-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--color-signal-orange);
+  text-underline-offset: 4px;
+}
+.docs-content a:hover { color: var(--color-signal-orange-600); }
+
+.docs-content strong { color: var(--color-ground-ink); font-weight: 700; }
+.docs-content em { font-style: italic; }
+.docs-content code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.85em;
+  color: var(--color-ground-ink);
+  background: var(--color-ground-cream);
+  padding: 0.1em 0.35em;
+  border: 1px solid var(--color-border-whisper);
+}
+
+.docs-content pre {
+  background: var(--color-ground-cream);
+  border: 1px solid var(--color-border-whisper);
+  padding: 1rem 1.25rem;
+  overflow-x: auto;
+  margin: 1.25rem 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--color-ground-ink);
+}
+.docs-content pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+.callout {
+  border-left: 2px solid var(--color-signal-orange);
+  padding: 0.75rem 1rem;
+  background: var(--color-ground-cream);
+  margin: 1.25rem 0;
+}
+.callout p { color: var(--color-ground-ink); margin: 0; }
+
+table.api-ref {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.82rem;
+}
+table.api-ref th,
+table.api-ref td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-top: 1px solid var(--color-border-whisper);
+  vertical-align: top;
+}
+table.api-ref th {
+  color: var(--color-text-muted);
+  font-weight: normal;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+}
+table.api-ref td.sig { color: var(--color-ground-ink); white-space: nowrap; }
+table.api-ref td.desc { color: var(--color-text-muted); font-family: "Satoshi", system-ui, sans-serif; font-size: 0.9rem; line-height: 1.55; }
