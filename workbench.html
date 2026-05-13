@@ -232,6 +232,49 @@
         or restore a draft you started earlier.
       </p>
 
+      <!-- No-agent install CTA. Most first-time users land here without
+           realising they need to install a local helper. This panel
+           tells them why and how, with the install one-liners visible
+           so they don't have to dig through docs first. -->
+      <template x-if="!agentReady">
+        <div class="border border-orange-500 bg-orange-500/5 p-5 md:p-6 mb-8">
+          <div class="flex items-start gap-3">
+            <span class="text-orange-500 text-xl leading-none mt-0.5" aria-hidden="true">&#9888;</span>
+            <div class="flex-1 min-w-0">
+              <div class="font-bold text-ink mb-1">No agent paired.</div>
+              <p class="text-xs text-text-muted leading-relaxed mb-4">
+                Scan and live-test need a small helper running on the device
+                that's on the same LAN as the inverter (your laptop, a Pi,
+                a 42W box). Install one, then pair — or skip ahead with
+                <em>Paste device specs</em> if you only need AI drafting.
+              </p>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3 text-[11px]">
+                <div class="bg-paper border border-border-whisper p-2.5 font-mono break-all">
+                  <div class="micro-label text-text-muted mb-1 text-[9px]">macOS · Linux</div>
+                  brew install srcfl/tap/hugin-agent
+                </div>
+                <div class="bg-paper border border-border-whisper p-2.5 font-mono break-all">
+                  <div class="micro-label text-text-muted mb-1 text-[9px]">Windows</div>
+                  scoop install srcfl/hugin-agent
+                </div>
+                <div class="bg-paper border border-border-whisper p-2.5 font-mono break-all">
+                  <div class="micro-label text-text-muted mb-1 text-[9px]">Docker</div>
+                  ghcr.io/srcfl/hugin-agent
+                </div>
+              </div>
+              <div class="flex flex-wrap items-center gap-3 text-xs">
+                <a href="/docs/" class="text-orange-500 hover:text-ink font-medium no-underline">
+                  Full install walkthrough →
+                </a>
+                <a href="/settings.html" class="text-text-muted hover:text-ink no-underline">
+                  Already installed? Pair it →
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
       <!-- Two main actions -->
       <div class="grid sm:grid-cols-2 gap-px bg-border-whisper border border-border-whisper mb-8">
         <button @click="scanLAN()"

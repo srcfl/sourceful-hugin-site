@@ -216,32 +216,56 @@
     <div class="micro-label text-text-muted mb-4">…or pair a remote agent</div>
 
     <p class="text-sm text-text-muted leading-relaxed mb-5 max-w-prose">
-      For agents that don't live on your laptop: register through
-      Sourceful's NATS broker. The workbench connects over WSS, your
-      agent stays on its own network. No port-forwarding, no inbound
-      firewall holes.
+      For agents that don't live on your laptop: the agent itself
+      registers, then hands off back to this page. The workbench
+      connects over WSS, your agent stays on its own network. No
+      port-forwarding, no inbound firewall holes.
     </p>
 
-    <div class="flex flex-wrap items-center gap-3">
-      <button @click="pairRemote()"
-              :disabled="!ghTokenPresent || remotePairing"
-              class="bg-ink text-paper px-5 py-2.5 text-sm font-medium rounded-none hover:bg-orange-500 hover:text-paper transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-        <span x-show="!remotePairing">Pair via GitHub</span>
-        <span x-show="remotePairing" x-cloak>Connecting…</span>
-      </button>
+    <!-- Two states: actively completing a handoff, or waiting for one. -->
+    <template x-if="remotePairing">
+      <div class="border border-border-whisper p-4 font-mono text-sm text-ink">
+        <span class="status-dot orange"></span>
+        <span class="ml-2">Connecting to agent over NATS… minting owner credentials…</span>
+      </div>
+    </template>
 
-      <template x-if="!ghTokenPresent">
-        <a href="/workbench.html" class="text-xs font-mono text-text-muted hover:text-ink no-underline">
-          Sign in on the workbench first →
-        </a>
-      </template>
+    <template x-if="!remotePairing">
+      <div class="space-y-4">
+        <ol class="text-sm text-text-muted leading-relaxed space-y-2 list-decimal pl-5">
+          <li>Install <code class="font-mono text-ink">hugin-agent</code> on the machine that has LAN access to your device.</li>
+          <li>Run <code class="font-mono text-ink">hugin-agent --register --gh-token=…</code> there.</li>
+          <li>It opens this page automatically with the pairing info — no copy-paste.</li>
+        </ol>
 
-      <template x-if="ghTokenPresent">
-        <span class="text-xs font-mono text-text-muted">
-          Mints a 30-day NATS credential under your GitHub login.
-        </span>
-      </template>
-    </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+          <div class="border border-border-whisper bg-cream p-3">
+            <div class="micro-label text-orange-500 mb-1.5">macOS · Linux</div>
+            <code class="font-mono text-ink break-all">brew install srcfl/tap/hugin-agent</code>
+          </div>
+          <div class="border border-border-whisper bg-cream p-3">
+            <div class="micro-label text-orange-500 mb-1.5">Windows</div>
+            <code class="font-mono text-ink break-all">scoop install srcfl/hugin-agent</code>
+          </div>
+          <div class="border border-border-whisper bg-cream p-3">
+            <div class="micro-label text-orange-500 mb-1.5">Docker (e.g. 42W)</div>
+            <code class="font-mono text-ink break-all">ghcr.io/srcfl/hugin-agent:latest</code>
+          </div>
+        </div>
+
+        <p class="text-xs text-text-muted">
+          Full setup walkthrough in
+          <a href="/docs/" class="text-ink underline decoration-orange-500 underline-offset-4 hover:text-orange-500">the docs</a>.
+          <template x-if="!ghTokenPresent">
+            <span class="block mt-2 text-destructive-red">
+              You need a GitHub token first —
+              <a href="/workbench.html" class="text-ink underline decoration-destructive-red underline-offset-4 hover:text-orange-500">sign in on the workbench</a>
+              before running <code class="font-mono">--register</code>.
+            </span>
+          </template>
+        </p>
+      </div>
+    </template>
 
     <div x-show="remoteError" x-cloak class="mt-4 border border-destructive-red/50 bg-destructive-red/5 p-4">
       <div class="micro-label text-destructive-red mb-1">Error</div>
@@ -424,27 +448,45 @@
           this.form.token = this.paired.token || '';
         }
 
-        // Hand-off from `hugin-agent` itself: when the agent boots it
-        // opens this page with #agent_url=…&token=… so the user doesn't
-        // have to copy-paste from the terminal. Fragment never reaches
-        // the server. We pre-fill, auto-Test, and clear the fragment so
-        // the token doesn't sit in the address bar / browser history.
+        // Hand-off from `hugin-agent`. Two fragment shapes:
+        //
+        //  Local pair (HTTP):
+        //    #agent_url=…&token=…
+        //    The agent's HTTP-mode startup opens us; we Test then Save.
+        //
+        //  Remote pair (NATS):
+        //    #pair_agent_id=…&kind=remote
+        //    The agent's --register flow opens us with the agent_id it
+        //    just registered. We call /v1/agents/{id}/owner-creds to mint
+        //    matching browser-side creds.
+        //
+        // Fragment never reaches the server. We scrub the URL after
+        // reading so tokens don't sit in browser history.
         const frag = window.location.hash.startsWith('#')
           ? window.location.hash.slice(1)
           : '';
         if (frag) {
           const params = new URLSearchParams(frag);
+          // Scrub the URL before doing anything async.
+          history.replaceState(null, '', window.location.pathname);
+
+          const pairAgentId = (params.get('pair_agent_id') || '').trim();
+          const kind = (params.get('kind') || '').trim();
+          if (pairAgentId && kind === 'remote') {
+            // Remote-pair handoff. Auto-execute against the new
+            // /v1/agents/{id}/owner-creds endpoint.
+            this.$nextTick(() => this.applyRemotePairFragment(pairAgentId));
+            return;
+          }
+
           const urlFromAgent = params.get('agent_url');
           const tokFromAgent = params.get('token');
           if (urlFromAgent) this.form.url = urlFromAgent;
           if (tokFromAgent) this.form.token = tokFromAgent;
-          // Scrub the URL — same trick auth-success.html uses.
-          history.replaceState(null, '', window.location.pathname);
           if (urlFromAgent && tokFromAgent) {
-            // The agent-handoff fragment is a trusted, one-click flow: the
-            // local agent itself opened this page. Auto-Test, then on
-            // success auto-Save and bounce to the workbench. The manual
-            // paste path (no fragment) keeps the explicit two-click flow.
+            // The agent-handoff fragment is a trusted, one-click flow:
+            // the local agent itself opened this page. Auto-Test, then
+            // on success auto-Save and bounce to the workbench.
             this.autoPair = true;
             this.$nextTick(() => this.testConnection());
           }
@@ -632,27 +674,31 @@
         this.savedFlash = false;
       },
 
-      // pairRemote — connect a cloud-relayed (NATS) agent.
+      // applyRemotePairFragment — complete the agent's --register handoff.
+      //
+      // Fired when the fragment carries #pair_agent_id=…&kind=remote
+      // (set by `hugin-agent --register`). The agent has already
+      // registered itself and printed this URL; the browser side now
+      // mints matching OWNER-role creds.
       //
       // Steps:
-      //   1. Take the GitHub OAuth token already in localStorage (set by
-      //      the workbench sign-in). Bail if absent — user signs in on
-      //      the workbench first.
-      //   2. POST /v1/agents/register → fresh agent_id + nats_url +
-      //      user JWT + user_seed (30-day TTL on the JWT).
-      //   3. Open a WSS NATS connection with those creds and send a
-      //      req.info to fetch the agent's actual capabilities. Falls
-      //      back to a sensible default if the agent isn't online yet.
-      //   4. Persist to localStorage with kind='remote' and clear the
-      //      local-mode keys.
+      //   1. Take the GitHub OAuth token from localStorage (set by the
+      //      workbench sign-in). Bail with an actionable error if absent.
+      //   2. POST /v1/agents/{id}/owner-creds → owner JWT + seed scoped
+      //      to *this exact agent_id*, with 30d TTL. Crucially this is
+      //      not /v1/agents/register, which would mint a fresh id with
+      //      no responder (the Sprint A phantom-agent bug).
+      //   3. Probe req.info via NATS to learn the agent's capabilities.
+      //      Best-effort; agent may not yet have started its
+      //      `hugin-agent --no-listen --no-browser` run.
+      //   4. Persist with kind='remote' + the agent_id from the URL.
       //
-      // nats-client.js is loaded lazily so users on the local-only path
-      // don't pay the CDN cost.
-      async pairRemote() {
+      // nats-client.js is loaded lazily.
+      async applyRemotePairFragment(agentId) {
         if (this.remotePairing) return;
         const ghToken = (localStorage.getItem(LS_GH_TOKEN) || '').trim();
         if (!ghToken) {
-          this.remoteError = 'Sign in on the workbench first — Hugin needs a GitHub token to mint NATS credentials.';
+          this.remoteError = 'Sign in on the workbench first, then re-run `hugin-agent --register --gh-token=…` so it can hand off here again.';
           return;
         }
 
@@ -662,17 +708,34 @@
 
         let conn = null;
         try {
-          const mod = await import('/nats-client.js');
-          const { natsUrl, agentId, creds } = await mod.fetchAgentCreds(API_BASE, ghToken);
-          if (!natsUrl || !agentId || !creds?.jwt || !creds?.seed) {
-            throw new Error('register returned incomplete credentials');
+          // 1. Mint owner-role creds bound to the agent_id from the URL.
+          const credsResp = await fetch(
+            `${API_BASE}/v1/agents/${encodeURIComponent(agentId)}/owner-creds`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${ghToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: '{}',
+            },
+          );
+          if (!credsResp.ok) {
+            const body = await credsResp.text().catch(() => '');
+            throw new Error(`owner-creds: ${credsResp.status} ${body || credsResp.statusText}`);
+          }
+          const ownerCreds = await credsResp.json();
+          const natsUrl = ownerCreds.nats_url;
+          const creds = { jwt: ownerCreds.user_jwt, seed: ownerCreds.user_seed };
+          if (!natsUrl || !creds.jwt || !creds.seed) {
+            throw new Error('owner-creds response missing fields');
           }
 
-          // Probe req.info so the saved capabilities are real, not
-          // a hardcoded guess. Short timeout because the agent might
-          // not be online yet — that's fine, we'll re-probe later.
+          // 2. Probe req.info for capabilities. Short timeout; the
+          // agent may not yet be running its NATS-mode subscriber.
           let caps = ['scan', 'probe', 'run-lua'];
           try {
+            const mod = await import('/nats-client.js');
             conn = await mod.connect({ natsUrl, creds });
             const { response } = await conn.request(
               `agent.${agentId}.req.info`,
@@ -684,12 +747,12 @@
             }
           } catch (_probeErr) {
             // Agent offline; keep the default capabilities. The
-            // workbench will reflect "remote (offline)" until the
-            // agent comes online.
+            // workbench shows "remote (offline)" until the user runs
+            // `hugin-agent` (no flags) to start its NATS subscriber.
           }
 
-          // Persist + flip kind to 'remote'. Clear local-mode keys so
-          // the two pairings stay mutually exclusive.
+          // 3. Persist + flip kind to 'remote'. Clear local-mode keys
+          // so the two pairings stay mutually exclusive.
           localStorage.setItem(LS_KIND, 'remote');
           localStorage.setItem(LS_AGENT_ID, agentId);
           localStorage.setItem(LS_NATS_URL, natsUrl);
@@ -700,6 +763,9 @@
 
           this.refreshPaired();
           this.savedFlash = true;
+
+          // The fragment handoff is one-click: bounce to workbench.
+          setTimeout(() => { window.location.replace('/workbench.html'); }, 800);
         } catch (e) {
           this.remoteError = e?.message || String(e);
         } finally {
